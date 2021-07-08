@@ -1,0 +1,16 @@
+#setup alias for testenv.sh
+alias t='sudo /home/davidm/FIUlocal/xdp-tutorial/testenv/testenv.sh'
+
+#run sudo or alias to set up env 
+t --setup --name veth-basic03
+
+#enter environment fom another terminal
+t --enter --name veth-basic03
+
+#start pinging veth-basic03 (if that's your setup name) using ip6 addr
+
+#attach to psuedo device from current terminal and attach XDP section
+
+sudo ./xdp_load_and_stats --dev veth-basic03 --force --progsec xdp_stats1
+
+#you shoiuld see printouts coming to the terminal as it collects packets
