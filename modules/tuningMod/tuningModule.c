@@ -62,35 +62,71 @@ void TuningModule_Wrapper_Sleep( unsigned long duration )
   wait_event_timeout(wq, 0, duration);
 }
 
-int Process_Event_From_Userspace(void){
+int Do_Initial_Tuning(void)
+{
+	TuningModule_Wrapper_Sleep((unsigned long)3000);
+	printk(KERN_ALERT "***In Do_Initial_Tuning***\n");
+
+	return 0;
+}
+
+int Process_Event_From_Userspace(void)
+{
 	static unsigned long count = 0;
 
+	count++;
 	TuningModule_Wrapper_Sleep((unsigned long)2500);
 	printk(KERN_ALERT "***In process event from Userspace*** %ld\n", count);
 
 	return 0;
 }
 
-int Process_Event_From_Collector(void){
+int Process_Event_From_Collector(void)
+{
 	static unsigned long count = 0;
 
+	count++;
 	TuningModule_Wrapper_Sleep((unsigned long)2000);
 	printk(KERN_ALERT "***In process event from Collector*** %ld\n", count);
 
 	return 0;
 }
 
+static int ready_to_go = 0;
+static struct task_struct *dit_Thread_task  ;
+static int Do_Initial_Tuning_Thread( void *p )
+{
+
+   	ISSUE_WARNING "Do_Initial_Tuning_Thread is being started.\n" ) ;
+
+
+   	Do_Initial_Tuning() ;
+ 	ready_to_go = 1; 
+
+  	return 0;
+}
+	
 /*------------------------------------------------
-d) ;
+Read_From_Userspace_Thread_Loop( void *p );
 ------------------------------------------------*/
 static struct task_struct *rfu_Thread_task  ;
 static int Read_From_Userspace_Thread_Loop( void *p )
 {
-int j;
+int j, x;
 
    ISSUE_WARNING "Read_From_Userspace_Thread_Loop) is being started.\n" ) ;
 
+   while(1) {
+   
+   		if (ready_to_go)
+			break;
+	
+		for(x = 0; x < 4096; x++);//do something
 
+		schedule(); //give up the cpu until ready
+   }
+
+	//go ahead	
    while( 1 ){
 
       wait_event_timeout(RFU_Thread_Queue, atomic_dec_and_test(&RFU_Thread_Queue_Flag), WAIT_TIMEOUT);
@@ -111,10 +147,19 @@ Read_From_Collector_Thread_Loop(void * p) ;
 static struct task_struct *rfc_Thread_task  ;
 static int Read_From_Collector_Thread_Loop( void *p )
 {
-int j;
+int j,x;
 
    ISSUE_WARNING "Read_From_Userspace_Thread_Loop) is being started.\n" ) ;
+   
+   while(1) {
+   
+   		if (ready_to_go)
+			break;
+	
+		for(x = 0; x < 4096; x++);//do something
 
+		schedule(); //give up the cpu until ready
+   }
 
    while( 1 ){
 
@@ -140,16 +185,22 @@ static int tuningModule_init(void) {
 	}
 
 	printk(KERN_INFO "tuningModule has been loaded %d\n", major);
-
-      rfu_Thread_task = kthread_run( Read_From_Userspace_Thread_Loop, NULL, "read_From_Userspace_Thread_Loop");
-      if (IS_ERR(rfu_Thread_task) ){
-        return PTR_ERR(rfu_Thread_task ) ;
-      };
       
-	  rfc_Thread_task = kthread_run( Read_From_Collector_Thread_Loop, NULL, "read_From_Collector_Thread_Loop");
-      if (IS_ERR(rfc_Thread_task) ){
-        return PTR_ERR(rfc_Thread_task ) ;
-      };
+	dit_Thread_task = kthread_run( Do_Initial_Tuning_Thread, NULL, "do_initial_Tuning_Thread");
+    if (IS_ERR(dit_Thread_task) ){
+    	return PTR_ERR(dit_Thread_task ) ;
+    };
+      
+
+    rfu_Thread_task = kthread_run( Read_From_Userspace_Thread_Loop, NULL, "read_From_Userspace_Thread_Loop");
+    if (IS_ERR(rfu_Thread_task) ){
+    	return PTR_ERR(rfu_Thread_task ) ;
+    };
+      
+	rfc_Thread_task = kthread_run( Read_From_Collector_Thread_Loop, NULL, "read_From_Collector_Thread_Loop");
+    if (IS_ERR(rfc_Thread_task) ){
+    	return PTR_ERR(rfc_Thread_task ) ;
+    };
 
 
 	return 0;
