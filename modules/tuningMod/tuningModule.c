@@ -23,12 +23,6 @@ MODULE_LICENSE("Tuning BSD/GPL");
 // 50 jiffies = 200 msecs
 #define WAIT_TIMEOUT    HZ/5
 
-void TuningModule__Wrapper_Sleep( unsigned long duration )
-{
-  DECLARE_WAIT_QUEUE_HEAD(wq);
-  wait_event_timeout(wq, 0, duration);
-}
-
 DECLARE_COMPLETION(RFU_side_completion);
 DECLARE_WAIT_QUEUE_HEAD(RFU_Thread_Queue);
 static int RFU_side_stop_flag = 0;
