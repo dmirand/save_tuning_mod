@@ -6,8 +6,9 @@
 #include <linux/completion.h>
 #include <linux/kthread.h>
 #include <linux/errno.h>
+#include <linux/random.h>
 
-MODULE_LICENSE("Tuning BSD/GPL");
+MODULE_LICENSE("GPL");
 
 #define DEVICE_NAME	"tuningMod"
 #define ISSUE_WARNING \
@@ -46,6 +47,7 @@ static struct file_operations fops = {
 };
 
 static int major;
+static char test[512];
 
 // 50 jiffies = 200 msecs
 #define WAIT_TIMEOUT    HZ/5
@@ -69,8 +71,8 @@ int Process_Event_From_Userspace(void)
 	static unsigned long count = 0;
 
 	count++;
-	TuningModule_Wrapper_Sleep((unsigned long)2500);
 	printk(KERN_ALERT "***In process event from Userspace*** %ld\n", count);
+	printk(KERN_INFO "%ld bytes written... Bytes written were **%s**\n",strlen(test),test);
 
 	return 0;
 }
@@ -78,10 +80,18 @@ int Process_Event_From_Userspace(void)
 int Process_Event_From_Collector(void)
 {
 	static unsigned long count = 0;
-
+int i, n = 10;
+unsigned int x;
 	count++;
-	TuningModule_Wrapper_Sleep((unsigned long)2000);
+	TuningModule_Wrapper_Sleep((unsigned long)8000);
 	printk(KERN_ALERT "***In process event from Collector*** %ld\n", count);
+
+/* print nums from 0 to 49 */
+for (i = 0; i < n; i++)
+{
+get_random_bytes(&x, sizeof(x));
+printk(KERN_ALERT "num = %d\n", x % 50);
+}
 
 	return 0;
 }
@@ -106,7 +116,8 @@ Read_From_Userspace_Thread_Loop( void *p );
 static struct task_struct *rfu_Thread_task  ;
 static int Read_From_Userspace_Thread_Loop( void *p )
 {
-int j, x;
+int x;
+long j;
 
    ISSUE_WARNING "Read_From_Userspace_Thread_Loop) is being started.\n" ) ;
 
@@ -123,10 +134,11 @@ int j, x;
 	//go ahead	
    while( 1 ){
 
-      wait_event_timeout(RFU_Thread_Queue, atomic_dec_and_test(&RFU_Thread_Queue_Flag), WAIT_TIMEOUT);
+      j = wait_event_timeout(RFU_Thread_Queue, atomic_dec_and_test(&RFU_Thread_Queue_Flag), WAIT_TIMEOUT);
 
-        j = Process_Event_From_Userspace() ;
-        //atomic_set(&RFU_Thread_Queue_Flag,1);
+	if (j)
+        x = Process_Event_From_Userspace() ;
+
       if( RFU_side_stop_flag )
          break ;
    };
@@ -143,7 +155,7 @@ static int Read_From_Collector_Thread_Loop( void *p )
 {
 int j,x;
 
-   ISSUE_WARNING "Read_From_Userspace_Thread_Loop) is being started.\n" ) ;
+   ISSUE_WARNING "Read_From_Collector_Thread_Loop) is being started.\n" ) ;
    
    while(1) {
    
@@ -160,7 +172,7 @@ int j,x;
       wait_event_timeout(RFC_Thread_Queue, atomic_dec_and_test(&RFC_Thread_Queue_Flag), WAIT_TIMEOUT);
 
         j = Process_Event_From_Collector() ;
-        //atomic_set(&RFU_Thread_Queue_Flag,1);
+        //atomic_set(&RFC_Thread_Queue_Flag,1);
       if( RFC_side_stop_flag )
          break ;
    };
@@ -225,16 +237,22 @@ static int tuning_release(struct inode *inodep, struct file *filep){
 
 static ssize_t tuning_write(struct file *filep, const char *buffer, 
 											size_t len, loff_t *offset){
-	printk(KERN_INFO "Sorry, tuningModule is read only\n");
-	return -EFAULT;
+	if (copy_from_user(test,buffer,len))
+	{
+		printk(KERN_INFO "Sorry, error writing to tuningModule\n");
+		return -EFAULT;
+	}
 
+	test[len] = 0;	
+	atomic_set(&RFU_Thread_Queue_Flag,1);
+	return len;
 }
 
 static ssize_t tuning_read(struct file *filep, char *buffer, 
 											size_t len, loff_t *offset){
 
 	int errors = 0;
-	char *message = "You have entered the tuningModule realm... ";
+	char *message = "You have entered the tuningModule realm...";
 	int message_len = strlen(message);
 
 	errors = copy_to_user(buffer, message, message_len);

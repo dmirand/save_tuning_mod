@@ -13,9 +13,10 @@ int main()
 {
 
 	char *pDevName = "/dev/tuningMod";
-	char *pMessage = "this is a test";
+	char aMessage[512];
+
 	int fd;
-	int len = strlen(pMessage);
+	int len = strlen(aMessage);
 	int result;
 
 	tunuser_ptr = fopen("/tmp/tuningLog","a");
@@ -32,11 +33,19 @@ int main()
 
 	if (fd > 0)
 	{
-		result = write(fd,pMessage,len);
+		strcpy(aMessage,"This is a message...");
+		result = write(fd,aMessage,strlen(aMessage));
 		if (result < 0)
-			printf("There was an error writing***\n");
+			fprintf(tunuser_ptr,"There was an error writing***\n");
 		else
-			printf("***Good writing***\n");
+			fprintf(tunuser_ptr,"***GoodW**, message written = ***%s***\n", aMessage);
+
+		memset(aMessage,0,512);
+		result = read(fd,aMessage,512);
+		if (result < 0)
+			fprintf(tunuser_ptr,"There was an error readin***\n");
+		else
+			fprintf(tunuser_ptr,"***GoodR**, message read = ***%s***\n", aMessage);
 		
 	}
 		
