@@ -7,6 +7,7 @@
 #include <linux/kthread.h>
 #include <linux/errno.h>
 #include <linux/random.h>
+#include <linux/semaphore.h>
 
 MODULE_LICENSE("GPL");
 
@@ -34,6 +35,8 @@ DECLARE_WAIT_QUEUE_HEAD(RFC_Thread_Queue);
 static int RFC_side_stop_flag = 0;
 atomic_t RFC_Thread_Queue_Flag = ATOMIC_INIT(0);
 
+DEFINE_SEMAPHORE(readlock);
+
 static int tuning_open(struct inode*, struct file*);
 static int tuning_release(struct inode*, struct file*);
 static ssize_t tuning_read(struct file*, char*, size_t, loff_t*);
@@ -48,6 +51,7 @@ static struct file_operations fops = {
 
 static int major;
 static char test[512];
+static char writetest[512];
 
 // 50 jiffies = 200 msecs
 #define WAIT_TIMEOUT    HZ/5
@@ -80,18 +84,16 @@ int Process_Event_From_Userspace(void)
 int Process_Event_From_Collector(void)
 {
 	static unsigned long count = 0;
-int i, n = 10;
-unsigned int x;
-	count++;
-	TuningModule_Wrapper_Sleep((unsigned long)8000);
-	printk(KERN_ALERT "***In process event from Collector*** %ld\n", count);
+	unsigned int x;
+	unsigned long y;
 
-/* print nums from 0 to 49 */
-for (i = 0; i < n; i++)
-{
-get_random_bytes(&x, sizeof(x));
-printk(KERN_ALERT "num = %d\n", x % 50);
-}
+	count++;
+	get_random_bytes(&x, sizeof(x));
+	y = x % 8000; /* print from 0 to 7999 */
+	TuningModule_Wrapper_Sleep(y);
+	down(&readlock);
+	sprintf(writetest,"***Processed event from Collector*** %ld:%ld", count,y);
+	up(&readlock);
 
 	return 0;
 }
@@ -190,6 +192,8 @@ static int tuningModule_init(void) {
 		return major;
 	}
 
+	//Initialization of writetest
+	strcpy(writetest,"Entering tuningModule realm...");
 	printk(KERN_INFO "tuningModule has been loaded %d\n", major);
       
 	dit_Thread_task = kthread_run( Do_Initial_Tuning_Thread, NULL, "do_initial_Tuning_Thread");
@@ -251,11 +255,14 @@ static ssize_t tuning_write(struct file *filep, const char *buffer,
 static ssize_t tuning_read(struct file *filep, char *buffer, 
 											size_t len, loff_t *offset){
 
-	int errors = 0;
-	char *message = "You have entered the tuningModule realm...";
-	int message_len = strlen(message);
+	int message_len, errors = 0;
 
-	errors = copy_to_user(buffer, message, message_len);
+	if (down_interruptible(&readlock))
+		return -ERESTARTSYS;
+
+ 	message_len = strlen(writetest);
+	errors = copy_to_user(buffer, writetest, message_len);
+	up(&readlock);
 
 	return errors == 0 ? message_len : -EFAULT;
 }
