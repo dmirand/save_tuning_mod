@@ -8,7 +8,32 @@
 #include <string.h>
 /* This works with tuning Module */
 
-FILE * tunuser_ptr = 0;
+FILE * tunDefSysCfgPtr = 0;
+FILE * tunLogPtr = 0;
+void fDoSystemtuning(void);
+
+void fDoSystemTuning(void)
+{
+
+	char *line = NULL;
+    size_t len = 0;
+    ssize_t nread;
+
+    while ((nread = getline(&line, &len, tunDefSysCfgPtr)) != -1) {
+    	printf("Retrieved line of length %zu:\n", nread);
+		printf("&%s&",line);
+     //          fwrite(line, nread, 1, stdout);
+           }
+
+
+	fprintf(tunLogPtr, "Closing Tuning Module default system configuration file***\n");
+	fclose(tunDefSysCfgPtr);
+if(line)
+free(line);
+
+return;
+}
+
 int main() 
 {
 
@@ -19,15 +44,25 @@ int main()
 	int len = strlen(aMessage);
 	int result;
 
-	tunuser_ptr = fopen("/tmp/tuningLog","a");
-	if (!tunuser_ptr)
+	tunLogPtr = fopen("/tmp/tuningLog","w");
+	if (!tunLogPtr)
 	{
 		printf("Could not open tuning Logfile, exiting...\n");
 		exit(-1);
 	}
+	fprintf(tunLogPtr, "tuning Log opened***\n");
 
+	tunDefSysCfgPtr = fopen("/tmp/default_sysctl_config","r");
+	if (!tunDefSysCfgPtr)
+	{
+		printf("Could not open Tuning Module default system config file, exiting...\n");
+		exit(-2);
+	}
 
-	fprintf(tunuser_ptr, "tuning Log opened***\n");
+	fprintf(tunLogPtr, "Tuning Module default system configuration file opened***\n");
+	fflush(tunLogPtr);
+
+	fDoSystemTuning();
 	
 	fd = open(pDevName, O_RDWR,0);
 
@@ -36,24 +71,24 @@ int main()
 		strcpy(aMessage,"This is a message...");
 		result = write(fd,aMessage,strlen(aMessage));
 		if (result < 0)
-			fprintf(tunuser_ptr,"There was an error writing***\n");
+			fprintf(tunLogPtr,"There was an error writing***\n");
 		else
-			fprintf(tunuser_ptr,"***GoodW**, message written = ***%s***\n", aMessage);
+			fprintf(tunLogPtr,"***GoodW**, message written = ***%s***\n", aMessage);
 
 		memset(aMessage,0,512);
 		result = read(fd,aMessage,512);
 		if (result < 0)
-			fprintf(tunuser_ptr,"There was an error readin***\n");
+			fprintf(tunLogPtr,"There was an error readin***\n");
 		else
-			fprintf(tunuser_ptr,"***GoodR**, message read = ***%s***\n", aMessage);
+			fprintf(tunLogPtr,"***GoodR**, message read = ***%s***\n", aMessage);
 		
 	}
 		
 	if (fd > 0)
 		close(fd);
 
-	fprintf(tunuser_ptr, "tuning Log closed***\n");
-	fclose(tunuser_ptr);
+	fprintf(tunLogPtr, "Closing tuning Log***\n");
+	fclose(tunLogPtr);
 
 return 0;
 }
