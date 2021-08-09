@@ -12,6 +12,21 @@ FILE * tunDefSysCfgPtr = 0;
 FILE * tunLogPtr = 0;
 void fDoSystemtuning(void);
 
+typedef struct {
+    char * setting;
+    uint32_t  minimum;
+    uint32_t xDefault; //if default is 0, then defualt and max are nops
+    uint32_t maximum;
+}host_tuning_vals_t;
+
+
+host_tuning_vals_t aTuningNumsToUse[] = {
+    {"net.core.rmem_max",   67108864,       0,      0},
+        {"net.core.rmem_max",   67108864,       0,      0},
+        {"net.ipv4.tcp_rmem",       4096,       87380,   33554432},
+        {"net.ipv4.tcp_wmem",       4096,       65536,   33554432},
+};
+
 void fDoSystemTuning(void)
 {
 
