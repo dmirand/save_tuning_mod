@@ -8,20 +8,17 @@
 #include <string.h>
 #include <bits/stdint-uintn.h>
 #include <bits/types.h>
+#include <ctype.h>
+
 /* This works with tuning Module */
 
 FILE * tunDefSysCfgPtr = 0;
 FILE * tunLogPtr = 0;
 void fDoSystemtuning(void);
 
-#define cubic 		0
-#define reno 		1
-#define htcp 		2
-#define fq_codel 	3
-char *aStringp[] ={"cubic", 
-					"reno", 
-					"htcp",
-					"fq_codel"};
+#define htcp 		0
+#define fq_codel 	1
+char *aStringval[] ={"htcp", "fq_codel"};
 
 typedef struct {
     char * setting;
@@ -46,7 +43,7 @@ host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
     {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
     {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
     {"net.ipv4.tcp_mtu_probing",			   1,       	0,      	0},
-    {"net.ipv4.tcp_congestion_control",	   cubic, 			0, 			0}, //uses #defines to help
+    {"net.ipv4.tcp_congestion_control",	   htcp, 			0, 			0}, //uses #defines to help
     {"net.core.default_qdisc",fq_codel, 0, 0}, //uses #defines
 };
 
@@ -59,8 +56,7 @@ void fDoSystemTuning(void)
 	char *q, *r, *p = 0;
 	char setting[256];
 	char value[256];
-	int count, found = 0;
-	
+	int count, intvalue, found = 0;
 
     while ((nread = getline(&line, &len, tunDefSysCfgPtr)) != -1) {
     	//printf("Retrieved line of length %zu:\n", nread);
@@ -87,10 +83,36 @@ void fDoSystemTuning(void)
 				len = (r-q) + 1;
 				strncpy(value,q,len);
 				value[--len] = 0;
-			
-				printf("Current config value for *%s* is *%s*\n",setting, value);	
-							
-				printf("Minimum of recommended setting for %s is *%d*\n",setting, aTuningNumsToUse[count].minimum);
+	
+				if(isdigit(value[0]))
+				{
+					intvalue = atoi(value);
+					if(intvalue < aTuningNumsToUse[count].minimum)
+					{
+						if (aTuningNumsToUse[count].xDefault == 0) //only one value
+						{
+							printf("Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
+							printf("You should change to the  recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
+						}
+						else
+							{//has min, default and max values
+								//more work needed			
+								printf("Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
+								printf("You should change to the  recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
+								
+
+							}
+					}
+				}	
+				else
+					{ //must be a string
+						if (strcmp(value, aStringval[aTuningNumsToUse[count].minimum]) != 0)
+						{
+							printf("Current config value for *%s* is *%s* which is not the same as the recommendation...\n",setting, value);	
+							printf("You should change to the  recommended setting of *%s* for *%s*.\n",aStringval[aTuningNumsToUse[count].minimum], setting);
+						}
+					}
+
 				found = 1;
 				break;
 			}
