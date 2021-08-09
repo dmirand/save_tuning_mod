@@ -58,7 +58,7 @@ void fDoSystemTuning(void)
     ssize_t nread;
 	char *q, *r, *p = 0;
 	char setting[256];
-	char values[256];
+	char value[256];
 	int count, found = 0;
 	
 
@@ -85,11 +85,15 @@ void fDoSystemTuning(void)
 				q++; // move to the beginning of 1st (maybe only) number
 				r = strchr(q,'\n'); //search for newline
 				len = (r-q) + 1;
+				strncpy(value,q,len);
+				value[--len] = 0;
+			
+				printf("Current config value for *%s* is *%s*\n",setting, value);	
 							
-				printf("Minimum of %s is *%d*\n",setting, aTuningNumsToUse[count].minimum);
-
+				printf("Minimum of recommended setting for %s is *%d*\n",setting, aTuningNumsToUse[count].minimum);
+				found = 1;
+				break;
 			}
-				
 		}
 
 		if (!found)
