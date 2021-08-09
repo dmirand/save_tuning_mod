@@ -6,11 +6,22 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <bits/stdint-uintn.h>
+#include <bits/types.h>
 /* This works with tuning Module */
 
 FILE * tunDefSysCfgPtr = 0;
 FILE * tunLogPtr = 0;
 void fDoSystemtuning(void);
+
+#define cubic 		0
+#define reno 		1
+#define htcp 		2
+#define fq_codel 	3
+char *aStringp[] ={"cubic", 
+					"reno", 
+					"htcp",
+					"fq_codel"};
 
 typedef struct {
     char * setting;
@@ -19,12 +30,22 @@ typedef struct {
     uint32_t maximum;
 }host_tuning_vals_t;
 
+/* 
+ * Suggestion for net.ipv4.tcp_mem...
+ *
+ * for tcp_mem, set it to twice the maximum value for tcp_[rw]mem multiplied by  * the maximum number of running network applications divided by 4096 bytes per  * page.
+ * Increase rmem_max and wmem_max so they are at least as large as the third 
+ * values of tcp_rmem and tcp_wmem.
+ */
 
 host_tuning_vals_t aTuningNumsToUse[] = {
-    {"net.core.rmem_max",   67108864,       0,      0},
-        {"net.core.rmem_max",   67108864,       0,      0},
-        {"net.ipv4.tcp_rmem",       4096,       87380,   33554432},
-        {"net.ipv4.tcp_wmem",       4096,       65536,   33554432},
+    {"net.core.rmem_max",   			67108864,       	0,      	0},
+    {"net.core.rmem_max",   			67108864,       	0,      	0},
+    {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
+    {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
+    {"net.ipv4.tcp_mtu_probing",			   1,       	0,      	0},
+    {"net.ipv4.tcp_congestion_control",	   cubic, 			0, 			0}, //uses #defines
+    {"net.core.default_qdisc",fq_codel, 0, 0}, //uses #defines
 };
 
 void fDoSystemTuning(void)
