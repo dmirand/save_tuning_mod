@@ -57,10 +57,24 @@ void fDoSystemTuning(void)
 	char setting[256];
 	char value[256];
 	int count, intvalue, found = 0;
+		
+	fprintf(tunLogPtr,"\n\t\t\t***Start of Default System Tuning***\n");
+	fprintf(tunLogPtr,"\t\t\t***------------------------------***\n");
+
+	tunDefSysCfgPtr = fopen("/tmp/default_sysctl_config","r");
+	if (!tunDefSysCfgPtr)
+	{
+		fprintf(tunLogPtr,"Could not open Tuning Module default system config file, exiting...\n");
+		fclose(tunLogPtr);
+		exit(-2);
+	}
+
+	fprintf(tunLogPtr, "Tuning Module default system configuration file opened***\n");
+	fflush(tunLogPtr);
 
     while ((nread = getline(&line, &len, tunDefSysCfgPtr)) != -1) {
-    	//printf("Retrieved line of length %zu:\n", nread);
-		//printf("&%s&",line);
+    	//fprintf(tunLogPtr,"Retrieved line of length %zu:\n", nread);
+		//fprintf(tunLogPtr,"&%s&",line);
 		p = line;
 		q = strchr(line,' '); //search for space	
 		len = (q-p) + 1;
@@ -70,7 +84,7 @@ void fDoSystemTuning(void)
 		else
 			setting[len] = 0;
 
-		printf("\nsetting is ***%s***\n",setting);
+		fprintf(tunLogPtr,"\nsetting is ***%s***\n",setting);
 		/* compare with known list now */
 		for (count = 0; count < TUNING_NUMS; count++)
 		{
@@ -91,14 +105,14 @@ void fDoSystemTuning(void)
 					{
 						if (aTuningNumsToUse[count].xDefault == 0) //only one value
 						{
-							printf("Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
-							printf("You should change to the  recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
+							fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
+							fprintf(tunLogPtr,"You should change to the recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
 						}
 						else
 							{//has min, default and max values
 								//more work needed			
-								printf("Current config value for *XXXX***%s* is *%s*...\n",setting, value);	
-								printf("You should change to the  recommended setting of *%s* to *%d\t%d\t%d*.\n",setting, aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum);
+								fprintf(tunLogPtr,"Current config value for *XXXX***%s* is *%s*...\n",setting, value);	
+								fprintf(tunLogPtr,"You should change to the recommended setting of *%s* to *%d\t%d\t%d*.\n",setting, aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum);
 							}
 					}
 				}	
@@ -106,12 +120,12 @@ void fDoSystemTuning(void)
 					{ //must be a string
 						if (strcmp(value, aStringval[aTuningNumsToUse[count].minimum]) != 0)
 						{
-							printf("Current config value for *%s* is *%s* which is not the same as the recommendation...\n",setting, value);	
-							printf("You should change to the  recommended setting of *%s* for *%s*.\n",aStringval[aTuningNumsToUse[count].minimum], setting);
+							fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is not the same as the recommendation...\n",setting, value);	
+							fprintf(tunLogPtr,"You should change to the recommended setting of *%s* for *%s*.\n",aStringval[aTuningNumsToUse[count].minimum], setting);
 						}
 						else
 							{
-								printf("Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
+								fprintf(tunLogPtr,"Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
 							}
 							
 					}
@@ -122,12 +136,15 @@ void fDoSystemTuning(void)
 		}
 
 		if (!found)
-			printf("ERR*** Could not find the following setting **%s**\n", setting);
+			fprintf(tunLogPtr,"ERR*** Could not find the following setting **%s**\n", setting);
 		
 	}
-
-	fprintf(tunLogPtr, "Closing Tuning Module default system configuration file***\n");
+	
+	fprintf(tunLogPtr, "\n***Closing Tuning Module default system configuration file***\n");
 	fclose(tunDefSysCfgPtr);
+
+	fprintf(tunLogPtr,"\n\t\t\t***End of Default System Tuning***\n");
+	fprintf(tunLogPtr,"\t\t\t***----------------------------***\n\n");
 
 	if(line)
 		free(line);
@@ -153,16 +170,6 @@ int main()
 	}
 	fprintf(tunLogPtr, "tuning Log opened***\n");
 
-	tunDefSysCfgPtr = fopen("/tmp/default_sysctl_config","r");
-	if (!tunDefSysCfgPtr)
-	{
-		printf("Could not open Tuning Module default system config file, exiting...\n");
-		exit(-2);
-	}
-
-	fprintf(tunLogPtr, "Tuning Module default system configuration file opened***\n");
-	fflush(tunLogPtr);
-
 	fDoSystemTuning();
 	
 	fd = open(pDevName, O_RDWR,0);
@@ -174,7 +181,7 @@ int main()
 		if (result < 0)
 			fprintf(tunLogPtr,"There was an error writing***\n");
 		else
-			fprintf(tunLogPtr,"***GoodW**, message written = ***%s***\n", aMessage);
+			fprintf(tunLogPtr,"***GoodW**, message written to kernel module = ***%s***\n", aMessage);
 
 		memset(aMessage,0,512);
 		result = read(fd,aMessage,512);
