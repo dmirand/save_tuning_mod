@@ -23,7 +23,7 @@ char *aStringval[] ={"htcp", "fq_codel"};
 typedef struct {
     char * setting;
     uint32_t  minimum;
-    uint32_t xDefault; //if default is 0, then defualt and max are nops
+    uint32_t xDefault; //if default is 0, then default and max are nops
     uint32_t maximum;
 }host_tuning_vals_t;
 
@@ -43,8 +43,8 @@ host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
     {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
     {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
     {"net.ipv4.tcp_mtu_probing",			   1,       	0,      	0},
-    {"net.ipv4.tcp_congestion_control",	   htcp, 			0, 			0}, //uses #defines to help
-    {"net.core.default_qdisc",fq_codel, 0, 0}, //uses #defines
+    {"net.ipv4.tcp_congestion_control",	    htcp, 			0, 			0}, //uses #defines to help
+    {"net.core.default_qdisc",		    fq_codel, 			0, 			0}, //uses #defines
 };
 
 void fDoSystemTuning(void)
@@ -87,7 +87,7 @@ void fDoSystemTuning(void)
 				if(isdigit(value[0]))
 				{
 					intvalue = atoi(value);
-					if(intvalue < aTuningNumsToUse[count].minimum)
+					if(intvalue <= aTuningNumsToUse[count].minimum)
 					{
 						if (aTuningNumsToUse[count].xDefault == 0) //only one value
 						{
@@ -97,10 +97,8 @@ void fDoSystemTuning(void)
 						else
 							{//has min, default and max values
 								//more work needed			
-								printf("Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
-								printf("You should change to the  recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
-								
-
+								printf("Current config value for *XXXX***%s* is *%s*...\n",setting, value);	
+								printf("You should change to the  recommended setting of *%s* to *%d\t%d\t%d*.\n",setting, aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum);
 							}
 					}
 				}	
@@ -111,6 +109,11 @@ void fDoSystemTuning(void)
 							printf("Current config value for *%s* is *%s* which is not the same as the recommendation...\n",setting, value);	
 							printf("You should change to the  recommended setting of *%s* for *%s*.\n",aStringval[aTuningNumsToUse[count].minimum], setting);
 						}
+						else
+							{
+								printf("Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
+							}
+							
 					}
 
 				found = 1;
