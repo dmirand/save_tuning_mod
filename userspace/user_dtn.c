@@ -96,7 +96,7 @@ static void stats_print_header()
 }
 
 static void stats_print(struct stats_record *stats_rec,
-                        struct stats_record *stats_prev)
+                        struct stats_record *stats_prev, __u32 map_type)
 {
         struct record *rec, *prev;
         __u64 packets, bytes;
@@ -107,12 +107,35 @@ static void stats_print(struct stats_record *stats_rec,
 
         stats_print_header(); /* Print stats "header" */
 
-        /* Print for each XDP actions stats */
-        for (i = 0; i < XDP_ACTION_MAX; i++)
+		switch (map_type) {
+        case BPF_MAP_TYPE_ARRAY:
         {
+		    char *fmt = "%-12s %'11lld pkts (%'10.0f pps)"
+            //" %'11lld Kbytes (%'6.0f Mbits/s)"
+            " period:%f, bytes = %ld, packets = %ld, mytest = %ld\n";
+            const char *action = action2str(XDP_PASS);
+            rec  = &stats_rec->stats[0];
+            prev = &stats_prev->stats[0];
+
+            period = calc_period(rec, prev);
+            if (period == 0)
+                return;
+
+            packets = rec->total.rx_packets - prev->total.rx_packets;
+            pps     = packets / period;
+        	bytes = rec->total.rx_bytes - prev->total.rx_bytes;
+
+            printf(fmt, action, rec->total.rx_packets, pps, period, bytes, packets, rec->total.rx_tests);
+        }
+        break;
+	
+		case BPF_MAP_TYPE_PERCPU_ARRAY:	
+        /* Print for each XDP actions stats */
+        	for (i = 0; i < XDP_ACTION_MAX; i++)
+        	{
                 char *fmt = "%-12s %'11lld pkts (%'10.0f pps)"
-                        " %'11lld Kbytes (%'6.0f Mbits/s)"
-                        " period:%f\n";
+                     " %'11lld Kbytes (%'6.0f Mbits/s)"
+                     " period:%f, bytes = %ld, packets = %ld, mytest = %ld\n";
                 const char *action = action2str(i);
 
                 rec  = &stats_rec->stats[i];
@@ -130,9 +153,17 @@ static void stats_print(struct stats_record *stats_rec,
 
                 printf(fmt, action, rec->total.rx_packets, pps,
                        rec->total.rx_bytes / 1000 , bps,
-                       period);
-        }
-        printf("\n");
+                       period, bytes, packets, rec->total.rx_tests);
+        	}
+        	printf("\n");
+		break;
+
+		default:
+            fprintf(stderr, "ERR: Unknown map_type(%u) cannot handle\n",
+                map_type);
+        return;
+        break;
+    }
 }
 
 /* BPF_MAP_TYPE_ARRAY */
@@ -152,6 +183,7 @@ void map_get_value_percpu_array(int fd, __u32 key, struct datarec *value)
         struct datarec values[nr_cpus];
         __u64 sum_bytes = 0;
         __u64 sum_pkts = 0;
+		__u64 sum_tests = 0;
         int i;
 
         if ((bpf_map_lookup_elem(fd, &key, values)) != 0) {
@@ -164,9 +196,11 @@ void map_get_value_percpu_array(int fd, __u32 key, struct datarec *value)
         for (i = 0; i < nr_cpus; i++) {
                 sum_pkts  += values[i].rx_packets;
                 sum_bytes += values[i].rx_bytes;
+				sum_tests += values[i].rx_tests;
         }
         value->rx_packets = sum_pkts;
         value->rx_bytes   = sum_bytes;
+		value->rx_tests   = sum_tests;
 }
 
 static bool map_collect(int fd, __u32 map_type, __u32 key, struct record *rec)
@@ -192,6 +226,7 @@ static bool map_collect(int fd, __u32 map_type, __u32 key, struct record *rec)
 
         rec->total.rx_packets = value.rx_packets;
         rec->total.rx_bytes   = value.rx_bytes;
+		rec->total.rx_tests = value.rx_tests;//MY stuff for testing
         return true;
 }
 
@@ -201,9 +236,16 @@ static void stats_collect(int map_fd, __u32 map_type,
         /* Collect all XDP actions stats  */
         __u32 key;
 
+	if (map_type == BPF_MAP_TYPE_PERCPU_ARRAY)
+    {
         for (key = 0; key < XDP_ACTION_MAX; key++) {
                 map_collect(map_fd, map_type, key, &stats_rec->stats[key]);
         }
+	}
+	else {
+            key = XDP_PASS;
+            map_collect(map_fd, map_type, key, &stats_rec->stats[0]);
+    }
 }
 
 static void stats_poll(int map_fd, __u32 map_type, int interval, int kernel_fd)
@@ -217,13 +259,14 @@ static void stats_poll(int map_fd, __u32 map_type, int interval, int kernel_fd)
         stats_collect(map_fd, map_type, &record);
         usleep(1000000/4);
 
-        while (1) {
-                prev = record; /* struct copy */
-                stats_collect(map_fd, map_type, &record);
-                stats_print(&record, &prev);
-                sleep(interval);
-		fTalkToKernel(kernel_fd);
-                sleep(interval);
+        while (1) 
+		{
+        	prev = record; /* struct copy */
+            stats_collect(map_fd, map_type, &record);
+            stats_print(&record, &prev, map_type);
+            sleep(interval);
+			fTalkToKernel(kernel_fd);
+            sleep(interval);
         }
 }
 
@@ -260,7 +303,7 @@ int fDoRunBpfCollection(int argc, char **argv, int kernel_fd)
         return EXIT_FAIL_OPTION;
     }
 
-	    stats_map_fd = open_bpf_map_file(pin_dir, "xdp_stats_map", &info);
+	stats_map_fd = open_bpf_map_file(pin_dir, "xdp_stats_map", &info);
     if (stats_map_fd < 0) {
         return EXIT_FAIL_BPF;
     }
