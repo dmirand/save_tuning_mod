@@ -9,7 +9,7 @@
  * - Here an array with XDP_ACTION_MAX (max_)entries are created.
  * - The idea is to keep stats per (enum) xdp_action
  */
-#if 1
+#if 0
 struct bpf_map_def SEC("maps") xdp_stats_map = {
 	.type        = BPF_MAP_TYPE_PERCPU_ARRAY,
 	.key_size    = sizeof(__u32),
@@ -19,7 +19,7 @@ struct bpf_map_def SEC("maps") xdp_stats_map = {
 #endif
 
 //DM added for testing
-#if 0
+#if 1
 struct bpf_map_def SEC("maps") xdp_stats_map = {
         .type        = BPF_MAP_TYPE_ARRAY,
         .key_size    = sizeof(__u32),
@@ -27,7 +27,16 @@ struct bpf_map_def SEC("maps") xdp_stats_map = {
         .max_entries = XDP_ACTION_MAX,
 };
 #endif
+
 #if 1
+struct bpf_map_def SEC("maps") xdp_test_map = {
+        .type        = BPF_MAP_TYPE_ARRAY,
+        .key_size    = sizeof(__u32),
+        .value_size  = sizeof(__u32),
+        .max_entries = 256,
+};
+#endif
+#if 0
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 1 << 14);
@@ -76,6 +85,26 @@ int  xdp_stats1_func(struct xdp_md *ctx)
          * Assignment#3: Avoid the atomic operation
          * - Hint there is a map type named BPF_MAP_TYPE_PERCPU_ARRAY
          */
+	return action;
+}
+
+SEC("xdp_test")
+int  xdp_test_func(struct xdp_md *ctx)
+{
+	static __u32 count = 0;
+	__u32 *value;
+	__u32 action = XDP_PASS;
+
+	count++;
+	
+	/* Lookup in kernel BPF-side return pointer to actual data record */
+	value = bpf_map_lookup_elem(&xdp_test_map, &count);
+	if (!value)
+		return XDP_ABORTED;
+
+	lock_xadd(value, 3);
+	count++;
+	if (count > 255) count = 0;
 	return action;
 }
 

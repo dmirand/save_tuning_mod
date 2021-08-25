@@ -11,7 +11,7 @@ struct datarec {
 	/* add my stuff */
         __u64 rx_tests;
 };
-
+#define ARR_LEN 16
 #ifndef XDP_ACTION_MAX
 #define XDP_ACTION_MAX (XDP_REDIRECT + 1)
 #endif

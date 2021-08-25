@@ -67,7 +67,8 @@ static const struct option_wrapper long_options[] = {
 #endif
 
 const char *pin_basedir =  "/sys/fs/bpf";
-const char *map_name    =  "xdp_stats_map";
+const char *map_name    =  "xdp_test_map";
+//const char *map_name    =  "xdp_stats_map";
 
 /* Pinning maps under /sys/fs/bpf in subdir */
 int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir)
