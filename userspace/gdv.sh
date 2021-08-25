@@ -1,4 +1,4 @@
-
+#get default values
 sysctl net.core.rmem_max > /tmp/default_sysctl_config
 sysctl net.core.wmem_max >> /tmp/default_sysctl_config
 

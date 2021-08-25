@@ -512,6 +512,10 @@ int main(int argc, char **argv)
 	}
 	fprintf(tunLogPtr, "tuning Log opened***\n");
 
+	fprintf(tunLogPtr, "Running gdv.s - Shell script to Get default system valuesh***\n");
+
+	system("sh ./gdv.sh");
+
 	fDoSystemTuning();
 	
 	fd = open(pDevName, O_RDWR,0);
