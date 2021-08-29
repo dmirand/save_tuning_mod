@@ -1,9 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 //#include <linux/bpf.h>
+
+#include <string.h>
 #include "/usr/include/linux/bpf.h"
 #include <bpf/bpf_helpers.h>
 
-#include "common_kern_user.h" /* defines: struct datarec; */
+#include "../userspace/common_kern_user.h" /* defines: struct datarec; */
 
 /* Lesson#1: See how a map is defined.
  * - Here an array with XDP_ACTION_MAX (max_)entries are created.
@@ -33,18 +35,32 @@ struct bpf_map_def SEC("maps") xdp_test_map = {
         .type        = BPF_MAP_TYPE_ARRAY,
         .key_size    = sizeof(__u32),
         .value_size  = sizeof(__u32),
-        .max_entries = 256,
+        .max_entries = ARR_LEN,
+};
+#endif
+#if 1
+struct bpf_map_def SEC("maps") int_ring_buffer_me = {
+        .type        = BPF_MAP_TYPE_RINGBUF,
+        .max_entries = 1 << 14,
 };
 #endif
 #if 0
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
     __uint(max_entries, 1 << 14);
-} int_ring_buffer SEC(".maps");
+} int_ring_buffer_me SEC(".maps");
 #endif
 /* LLVM maps __sync_fetch_and_add() as a built-in function to the BPF atomic add
  * instruction (that is BPF_STX | BPF_XADD | BPF_W for word sizes)
  */
+
+#define bpf_printk(fmt, ...)                                    \
+({                                                              \
+        char ____fmt[] = fmt;                                   \
+        bpf_trace_printk(____fmt, sizeof(____fmt),              \
+                         ##__VA_ARGS__);                        \
+})
+
 #ifndef lock_xadd
 #define lock_xadd(ptr, val)	((void) __sync_fetch_and_add(ptr, val))
 #endif
@@ -91,20 +107,45 @@ int  xdp_stats1_func(struct xdp_md *ctx)
 SEC("xdp_test")
 int  xdp_test_func(struct xdp_md *ctx)
 {
-	static __u32 count = 0;
+	static __u64 count = 0;
 	__u32 *value;
 	__u32 action = XDP_PASS;
 
-	count++;
+	//int count2 = 3;
 	
 	/* Lookup in kernel BPF-side return pointer to actual data record */
 	value = bpf_map_lookup_elem(&xdp_test_map, &count);
 	if (!value)
 		return XDP_ABORTED;
 
-	lock_xadd(value, 3);
+	lock_xadd(value, 4);
+	bpf_printk("xdp_test: count: %llu\n",count);
+
 	count++;
-	if (count > 255) count = 0;
+	if (count >= ARR_LEN) count = 0;
+	return action;
+}
+
+SEC("xdp_test_ringbuf")
+int  xdp_test_ringbuf_func(struct xdp_md *ctx)
+{
+	static __u64 count = 0;
+	__u32 action = XDP_PASS;
+
+	//int count2 = 3;
+	struct event *ev = bpf_ringbuf_reserve(&int_ring_buffer_me, sizeof(struct event), 0);
+  
+	if (!ev) {
+		bpf_printk("xdp_test_ringbuf: Could not reserve event, count = %llu\n",count);
+   		return action;
+  }
+
+  ev->numb = count;
+  strcpy(ev->filename, "David");
+
+  bpf_ringbuf_submit(ev, 0);
+
+	count++;
 	return action;
 }
 
