@@ -40,12 +40,7 @@ const char *pin_basedir =  "/sys/fs/bpf";
 #include "../common/common_user_bpf_xdp.h"
 #include "common_kern_user.h"
 #include "bpf_util.h" /* bpf_num_possible_cpus */
-/*
-static int read_buffer_sample(void *ctx, void *data, size_t len) {
-  struct event *evt = (struct event *)data;
-  printf("%d %s\n", evt->pid, evt->filename);
-}
-*/
+
 static int read_buffer_sample(void *ctx, void *data, size_t len) {
   struct event *evt = (struct event *)data;
   printf("%lld ::: %s\n", evt->numb, evt->filename);
@@ -65,227 +60,6 @@ static const struct option_wrapper long_options[] = {
     {{0, 0, NULL,  0 }}
 };
 
-#define NANOSEC_PER_SEC 1000000000 /* 10^9 */
-static __u64 gettime(void)
-{
-        struct timespec t;
-        int res;
-
-        res = clock_gettime(CLOCK_MONOTONIC, &t);
-        if (res < 0) {
-                fprintf(stderr, "Error with gettimeofday! (%i)\n", res);
-                exit(EXIT_FAIL);
-        }
-        return (__u64) t.tv_sec * NANOSEC_PER_SEC + t.tv_nsec;
-}
-
-struct sRecord {
-        __u64 timestamp;
-       __u64 total; /* my testing */
-};
-
-static double calc_period(struct sRecord *r, struct sRecord *p)
-{
-        double period_ = 0;
-        __u64 period = 0;
-
-        period = r->timestamp - p->timestamp;
-        if (period > 0)
-                period_ = ((double) period / NANOSEC_PER_SEC);
-
-        return period_;
-}
-
-static void stats_print_header()
-{
-        /* Print stats "header" */
-        printf("%-12s\n", "XDP-action");
-}
-
-#define XDP_UNKNOWN       XDP_REDIRECT + 1
-#if 0
-        static const char *xdp2_action_names[XDP_ACTION_MAX] = {
-        [XDP_ABORTED]   = "XDP_ABORTED",
-        [XDP_DROP]      = "XDP_DROP",
-        [XDP_PASS]      = "XDP_PASS",
-        [XDP_TX]        = "XDP_TX",
-        [XDP_REDIRECT]  = "XDP_REDIRECT",
-        [XDP_UNKNOWN]   = "XDP_UNKNOWN",
-};
-#endif
-        static const char *xdp2_action_names[ARR_LEN+1] = {
-        "ZERO",
-        "ONE",
-        "TWO",
-        "THREE",
-        "FOUR",
-        "FIVE",
-        "SIX",
-        "SEVEN",
-        "UNKNOWN"
-};
-const char *action22str(__u32 action)
-{
-        if (action < ARR_LEN)
-                return xdp2_action_names[action];
-        return NULL;
-}
-
-static void stats_print(void *stats_rec2, void *stats_prev2, __u32 map_type)
-{
-        __u64 diff_total;
-		struct sRecord *rec, *prev;
-        double period;
-        double tps; /* totals per sec */
-        int i;
-
-		struct sRecord * stats_rec = (struct sRecord *) stats_rec2;
-		struct sRecord * stats_prev = (struct sRecord *) stats_prev2;
-
-        stats_print_header(); /* Print stats "header" */
-		char *fmt = "%-12s %ld prev_total, %ld current_total)"
-            			" %'11lld diff_total (%'6.0f Mbits/s),  period:%f\n";
-
-		switch (map_type) {
-        case BPF_MAP_TYPE_ARRAY:
-        {
-        	for (i = 0; i < ARR_LEN; i++)
-			{
-            	const char *index = action22str(i);
-            	rec  = &stats_rec[i];
-            	prev = &stats_prev[i];
-
-            	period = calc_period(rec, prev);
-            	if (period == 0)
-               		 return;
-
-            	diff_total = rec->total - prev->total;
-            	tps     = diff_total / period;
-
-            	printf(fmt, index, prev->total, rec->total, diff_total, tps, period);
-			}
-        }
-        break;
-	
-		case BPF_MAP_TYPE_PERCPU_ARRAY:	
-        	for (i = 0; i < ARR_LEN; i++)
-			{
-            	const char *index = action22str(i);
-            	rec  = &stats_rec[i];
-            	prev = &stats_prev[i];
-
-            	period = calc_period(rec, prev);
-            	if (period == 0)
-               		 return;
-
-            	diff_total = rec->total - prev->total;
-            	tps     = diff_total / period;
-
-            	printf(fmt, index, prev->total, rec->total, diff_total, tps, period);
-			}
-        	printf("\n");
-		break;
-
-		default:
-            fprintf(stderr, "ERR: Unknown map_type(%u) cannot handle\n",
-                map_type);
-        return;
-        break;
-    }
-}
-
-/* BPF_MAP_TYPE_ARRAY */
-void map_get_value_array(int fd, __u32 key, __u32 *value)
-{
-        if ((bpf_map_lookup_elem(fd, &key, value)) != 0) {
-                fprintf(stderr,
-                        "ERR: bpf_map_lookup_elem failed key:0x%X\n", key);
-        }
-}
-
-/* BPF_MAP_TYPE_PERCPU_ARRAY */
-void map_get_value_percpu_array(int fd, __u32 key, __u32 *value)
-{
-        /* For percpu maps, userspace gets a value per possible CPU */
-        unsigned int nr_cpus = bpf_num_possible_cpus();
-        __u32 values[nr_cpus];
-        __u32 sum_val = 0;
-        int i;
-
-        if ((bpf_map_lookup_elem(fd, &key, values)) != 0) {
-                fprintf(stderr,
-                        "ERR: bpf_map_lookup_elem failed key:0x%X\n", key);
-                return;
-        }
-
-        /* Sum values from each CPU */
-        for (i = 0; i < nr_cpus; i++) {
-                sum_val  += values[i];
-        }
-
-		*value = sum_val;
-}
-
-static bool map_collect(int fd, __u32 map_type, __u32 key, struct sRecord *rec)
-{
-        __u32 value;
-
-        /* Get time as close as possible to reading map contents */
-        rec->timestamp = gettime();
-
-        switch (map_type) {
-        case BPF_MAP_TYPE_ARRAY:
-                map_get_value_array(fd, key, &value);
-                break;
-        case BPF_MAP_TYPE_PERCPU_ARRAY:
-                map_get_value_percpu_array(fd, key, &value);
-                break;
-        default:
-                fprintf(stderr, "ERR: Unknown map_type(%u) cannot handle\n",
-                        map_type);
-                return false;
-                break;
-        }
-
-        rec->total = value;
-        return true;
-}
-
-static void stats_collect(int map_fd, __u32 map_type, void *stats_rec2)
-{
-        /* Collect all XDP actions stats  */
-        __u32 key;
-	struct sRecord *stats_rec = (struct sRecord *) stats_rec2;
-
-        for (key = 0; key < ARR_LEN; key++) {
-                map_collect(map_fd, map_type, key, &stats_rec[key]);
-	}
-}
-
-static void stats_poll(int map_fd, __u32 map_type, int interval, int kernel_fd)
-{
-        struct sRecord prev[ARR_LEN];
-        struct sRecord record[ARR_LEN];
-
-        /* Trick to pretty printf with thousands separators use %' */
-        setlocale(LC_NUMERIC, "en_US");
-
-        /* Get initial reading quickly */
-		memset(&record,0,sizeof(prev));
-        stats_collect(map_fd, map_type, &record);
-        usleep(1000000/4);
-
-        while (1) 
-		{
-        	memcpy(prev,record, sizeof(prev)); /* memcpy */
-            stats_collect(map_fd, map_type, &record);
-            stats_print(&record, &prev, map_type);
-            sleep(interval);
-			fTalkToKernel(kernel_fd);
-            sleep(interval);
-        }
-}
-
 int fDoRunBpfCollection(int argc, char **argv, int kernel_fd) 
 {
 
@@ -293,9 +67,8 @@ int fDoRunBpfCollection(int argc, char **argv, int kernel_fd)
     struct bpf_map_info info = { 0 };
     char pin_dir[PATH_MAX];
     int buffer_map_fd;
-    int interval = 5;
+    int interval = 2;
     struct ring_buffer *rb;
-    //int interval = 2;
     int len, err;
 
     struct config cfg = {
@@ -351,7 +124,7 @@ int fDoRunBpfCollection(int argc, char **argv, int kernel_fd)
 	while (1) {
 			ring_buffer__consume(rb);
 			fTalkToKernel(kernel_fd);
-			sleep(2);
+			sleep(interval);
 	}
     	
 }
