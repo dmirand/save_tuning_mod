@@ -50,7 +50,9 @@ const char *pin_basedir =  "/sys/fs/bpf";
 #include <locale.h>
 #include <time.h>
 
-#include <bpf/bpf.h>
+//#include <bpf/bpf.h>
+//Looks like I don't need <bpf/bpf.h> - I do need libbpf.h below though.
+//Looks like because of the ringbuf stuff
 #include "../../libbpf/src/libbpf.h"
 /* Lesson#1: this prog does not need to #include <bpf/libbpf.h> as it only uses
  * the simple bpf-syscall wrappers, defined in libbpf #include<bpf/bpf.h>
