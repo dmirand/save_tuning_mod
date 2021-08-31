@@ -15,6 +15,29 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 #include <ctype.h>
 #include <getopt.h>
 
+#define WORKFLOW_NAMES_MAX	4
+
+enum workflow_phases {
+	STARTING,
+    ASSESSMENT,
+    LEARNING,
+    TUNING,
+};
+
+static const char *workflow_names[WORKFLOW_NAMES_MAX] = {
+        "STARTING",
+        "ASSESSMENT",
+        "LEARNING",
+        "TUNING",
+};
+
+const char *phase2str(enum workflow_phases phase)
+{
+        if (phase < WORKFLOW_NAMES_MAX)
+                return workflow_names[phase];
+        return NULL;
+}
+
 int fTalkToKernel(int fd);
 
 /* start of bpf stuff  ****/
@@ -132,11 +155,115 @@ int fDoRunBpfCollection(int argc, char **argv, int kernel_fd)
 
 /* End of bpf stuff ****/
 
-/* This works with tuning Module */
-
 FILE * tunDefSysCfgPtr = 0;
 FILE * tunLogPtr = 0;
 void fDoSystemtuning(void);
+void fDo_lshw(void);
+
+void fDo_lshw(void)
+{
+	char *line = NULL;
+    size_t len = 0;
+    ssize_t nread;
+    char *p = 0;
+    int count = 0, found = 0;
+	FILE * lswh_ptr = 0;
+	int state = 0;
+	char savesize[16];
+	char savecap[16];
+	char savelinesize[256];
+
+	system("sudo lshw > /tmp/lswh_output 2>&1");
+
+	lswh_ptr = fopen("/tmp/lswh_output","r");
+	if (!lswh_ptr)
+	{
+    	fprintf(tunLogPtr,"Could not open lswh file to check more comparisons.\n");
+		return;
+	}
+
+    while (((nread = getline(&line, &len, lswh_ptr)) != -1) && !found) {
+			switch (state) {
+				case 0:
+	    			if (strstr(line,"*-memory\n"))
+	    			{
+    						fprintf(tunLogPtr,"The utility 'lshw' reports for memory:\n");
+							count++;
+							state = 1;
+					}
+					break;
+
+				case 1:
+						if ((p = strstr(line,"size: ")))
+						{
+								state = 2;
+								p = p + 6; //sizeof "size: "	
+								if (isdigit((int)*p))
+								{
+									int y = 0;
+									memset(savesize,0,sizeof(savesize));
+									while (isdigit((int)*p))
+									{
+										savesize[y] = *p;
+										p++;
+									}
+									strncpy(savelinesize,line, sizeof(savelinesize));
+								}
+								else
+								{
+    								fprintf(tunLogPtr,"memory size in lshw is not niumerical***\n");
+									return; // has to be a digit
+								}
+						}
+						break;
+
+				case 2:
+						if ((p = strstr(line,"capacity: ")))
+						{
+								state = 3;
+								p = p + 10; //sizeof "capacity: "	
+								if (isdigit((int)*p))
+								{
+									int y = 0;
+									memset(savecap,0,sizeof(savecap));
+									while (isdigit((int)*p))
+									{
+										savecap[y] = *p;
+										p++;
+									}
+								}
+								else
+								{
+    								fprintf(tunLogPtr,"memory size in lshw is not numerical***\n");
+									return; // has to be a digit
+								}
+
+								if (strcmp(savecap,savesize) == 0)
+								{
+									fprintf(tunLogPtr,"maximum memory installed in system\n");
+									fprintf(tunLogPtr,"%s",line);
+									fprintf(tunLogPtr,"%s",savelinesize);
+								}
+								else
+								{
+									fprintf(tunLogPtr,"%s",line);
+									fprintf(tunLogPtr,"%s",savelinesize);
+									fprintf(tunLogPtr,"you could install more memory in the system if you wish...\n");
+								}
+								found = 1;
+
+						}
+						break;
+
+				default:
+						break;
+			}
+	}
+
+return;
+}
+
+/* This works with tuning Module */
 
 #define htcp 		0
 #define fq_codel 	1
@@ -261,7 +388,13 @@ void fDoSystemTuning(void)
 			fprintf(tunLogPtr,"ERR*** Could not find the following setting **%s**\n", setting);
 		
 	}
-	
+
+	/* find additional things that could be tuned */
+	fDo_lshw();
+
+	fprintf(tunLogPtr,"\n***For additional info about your hardware settings and capabilities, please run \n");
+	fprintf(tunLogPtr,"***'sudo dmidecore' and/or 'sudo lshw'. \n\n");
+
 	fprintf(tunLogPtr, "\n***Closing Tuning Module default system configuration file***\n");
 	fclose(tunDefSysCfgPtr);
 
@@ -296,6 +429,9 @@ int fTalkToKernel(int fd)
 	return result;
 }
 
+
+static enum workflow_phases current_phase = STARTING;
+
 int main(int argc, char **argv) 
 {
 
@@ -309,12 +445,21 @@ int main(int argc, char **argv)
 		exit(-1);
 	}
 	fprintf(tunLogPtr, "tuning Log opened***\n");
+	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
 
-	fprintf(tunLogPtr, "Running gdv.s - Shell script to Get default system valuesh***\n");
+	fprintf(tunLogPtr, "Changing WorkFlow Phase***\n");
+	current_phase = ASSESSMENT;
+	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
+
+	fprintf(tunLogPtr, "Running gdv.sh - Shell script to Get default system valuesh***\n");
 
 	system("sh ./gdv.sh");
 
 	fDoSystemTuning();
+
+	fprintf(tunLogPtr, "Changing WorkFlow Phase***\n");
+	current_phase = LEARNING;
+	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
 	
 	fd = open(pDevName, O_RDWR,0);
 
