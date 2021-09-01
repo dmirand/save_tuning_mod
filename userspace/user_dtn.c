@@ -174,7 +174,7 @@ typedef struct {
 
 sUserValues_t userValues = {{"evaluation_timer", "5", "-1"},
 			    {"learning_mode_only","y","-1"},
-			    {"API_listen_port"}
+			    {"API_listen_port","5523","-1"}
 			   };
 
 void fDoGetUserCfgValues(void)
@@ -183,12 +183,11 @@ void fDoGetUserCfgValues(void)
 	char *line = NULL;
     size_t len = 0;
     ssize_t nread;
-    char *q, *p = 0;
-    unsigned long r;
+    char *p = 0;
     char setting[256];
 	int count = 0;
     
-	fprintf(tunLogPtr,"\nOpening %s...\n",pUserCfgFile);
+	fprintf(tunLogPtr,"\nOpening user provide config file: *%s*\n",pUserCfgFile);
 	userCfgPtr = fopen(pUserCfgFile,"r");
 	if (!userCfgPtr)
 	{
@@ -201,24 +200,42 @@ void fDoGetUserCfgValues(void)
 	{
 		int ind = 0;
 		memset(setting,0,sizeof(setting));
-        	p = line;
+        p = line;
 		while (!isblank((int)p[ind])) {
 				setting[ind] = p[ind];
 				ind++;
 		}
 
-		printf("setting is *%s*\n",setting);
       	/* compare with known list now */
         for (count = 0; count < NUMUSERVALUES; count++)
         {
-			printf("val is *%s*\n",userValues[count].aUserValues);
             if (strcmp(userValues[count].aUserValues, setting) == 0) //found
             {
-				printf("setting2 is *%s*\n",setting);
+				int y = 0;
+				memset(setting,0,sizeof(setting));
+        		while (isblank((int)p[ind])) //get past blanks etc
+						ind++;
+					
+                setting[y++] = p[ind++];
+
+        		while (isalnum((int)p[ind])) 
+				{
+                	setting[y++] = p[ind++];
+				}
+				
+				strcpy(userValues[count].cfg_value, setting);
 				break;
             }
         }
 	}
+
+	fprintf(tunLogPtr,"Final user config values after using settings from %s:\n",pUserCfgFile);
+	fprintf(tunLogPtr,"\nName, Default Value, Configured Value\n");
+	for (count = 0; count < NUMUSERVALUES; count++) 
+	{
+		fprintf(tunLogPtr,"%s, %s, %s\n",userValues[count].aUserValues, userValues[count].default_val, userValues[count].cfg_value);
+	}
+
 	return;
 }
 
@@ -249,7 +266,7 @@ void fDo_lshw(void)
 				case 0:
 	    			if (strstr(line,"*-memory\n"))
 	    			{
-    						fprintf(tunLogPtr,"The utility 'lshw' reports for memory:\n");
+    						fprintf(tunLogPtr,"\nThe utility 'lshw' reports for memory:\n");
 							count++;
 							state = 1;
 					}
@@ -373,6 +390,9 @@ void fDoSystemTuning(void)
 	fprintf(tunLogPtr,"\n\t\t\t***Start of Default System Tuning***\n");
 	fprintf(tunLogPtr,"\t\t\t***------------------------------***\n");
 
+	fprintf(tunLogPtr, "\nRunning gdv.sh - Shell script to Get default system values***\n");
+        system("sh ./gdv.sh");
+
 	tunDefSysCfgPtr = fopen("/tmp/default_sysctl_config","r");
 	if (!tunDefSysCfgPtr)
 	{
@@ -474,6 +494,7 @@ int fTalkToKernel(int fd)
 {
 	int result = 0;
 	char aMessage[512];
+		
 	strcpy(aMessage,"This is a message...");
 	result = write(fd,aMessage,strlen(aMessage));
 	if (result < 0)
@@ -510,19 +531,15 @@ int main(int argc, char **argv)
 	fprintf(tunLogPtr, "tuning Log opened***\n");
 	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
 
-	fprintf(tunLogPtr, "Changing WorkFlow Phase***\n");
+	fprintf(tunLogPtr, "***Changing WorkFlow Phase***\n");
 	current_phase = ASSESSMENT;
 	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
 
 	fDoGetUserCfgValues();
 
-	fprintf(tunLogPtr, "Running gdv.sh - Shell script to Get default system valuesh***\n");
-
-	system("sh ./gdv.sh");
-
 	fDoSystemTuning();
 
-	fprintf(tunLogPtr, "Changing WorkFlow Phase***\n");
+	fprintf(tunLogPtr, "***Changing WorkFlow Phase***\n");
 	current_phase = LEARNING;
 	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
 	
