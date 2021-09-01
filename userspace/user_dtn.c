@@ -165,10 +165,17 @@ int fDoRunBpfCollection(int argc, char **argv, int kernel_fd)
 
 /* Must change NUMUSERVALUES below if adding more values */
 #define NUMUSERVALUES	3
-char * aUserVaues[NUMUSERVALUES] = {"evaluation_time",
-	   								"learning_mode_only",
-									"API_listen_port"
-									};
+#define USERVALUEMAXLENGTH	256
+typedef struct {
+	char aUserValues[USERVALUEMAXLENGTH];
+	char default_val[32];
+	char cfg_value[32];
+} sUserValues_t[NUMUSERVALUES];
+
+sUserValues_t userValues = {{"evaluation_timer", "5", "-1"},
+			    {"learning_mode_only","y","-1"},
+			    {"API_listen_port"}
+			   };
 
 void fDoGetUserCfgValues(void)
 {
@@ -176,8 +183,10 @@ void fDoGetUserCfgValues(void)
 	char *line = NULL;
     size_t len = 0;
     ssize_t nread;
-    char *q, *r, *p = 0;
+    char *q, *p = 0;
+    unsigned long r;
     char setting[256];
+	int count = 0;
     
 	fprintf(tunLogPtr,"\nOpening %s...\n",pUserCfgFile);
 	userCfgPtr = fopen(pUserCfgFile,"r");
@@ -190,15 +199,29 @@ void fDoGetUserCfgValues(void)
 
     while ((nread = getline(&line, &len, userCfgPtr)) != -1) 
 	{
+		int ind = 0;
 		memset(setting,0,sizeof(setting));
-        p = line;
-        q = strchr(line,' '); //search for space
-        len = (q-p) + 1;
-        strncpy(setting,p,len);
-	}
+        	p = line;
+		while (!isblank((int)p[ind])) {
+				setting[ind] = p[ind];
+				ind++;
+		}
 
+		printf("setting is *%s*\n",setting);
+      	/* compare with known list now */
+        for (count = 0; count < NUMUSERVALUES; count++)
+        {
+			printf("val is *%s*\n",userValues[count].aUserValues);
+            if (strcmp(userValues[count].aUserValues, setting) == 0) //found
+            {
+				printf("setting2 is *%s*\n",setting);
+				break;
+            }
+        }
+	}
 	return;
 }
+
 void fDo_lshw(void)
 {
 	char *line = NULL;
