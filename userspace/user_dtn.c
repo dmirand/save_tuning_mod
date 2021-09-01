@@ -17,6 +17,12 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 
 #define WORKFLOW_NAMES_MAX	4
 
+FILE * tunLogPtr = 0;
+void fDoGetUserCfgValues(void);
+void fDoSystemtuning(void);
+void fDo_lshw(void);
+static char *pUserCfgFile = "user_config.txt";
+
 enum workflow_phases {
 	STARTING,
     ASSESSMENT,
@@ -157,11 +163,42 @@ int fDoRunBpfCollection(int argc, char **argv, int kernel_fd)
 
 /* End of bpf stuff ****/
 
-FILE * tunDefSysCfgPtr = 0;
-FILE * tunLogPtr = 0;
-void fDoSystemtuning(void);
-void fDo_lshw(void);
+/* Must change NUMUSERVALUES below if adding more values */
+#define NUMUSERVALUES	3
+char * aUserVaues[NUMUSERVALUES] = {"evaluation_time",
+	   								"learning_mode_only",
+									"API_listen_port"
+									};
 
+void fDoGetUserCfgValues(void)
+{
+	FILE * userCfgPtr = 0;	
+	char *line = NULL;
+    size_t len = 0;
+    ssize_t nread;
+    char *q, *r, *p = 0;
+    char setting[256];
+    
+	fprintf(tunLogPtr,"\nOpening %s...\n",pUserCfgFile);
+	userCfgPtr = fopen(pUserCfgFile,"r");
+	if (!userCfgPtr)
+	{
+    	fprintf(tunLogPtr,"\nOpening of %s failed, errno = %d\n",pUserCfgFile, errno);
+		return;
+		
+	}
+
+    while ((nread = getline(&line, &len, userCfgPtr)) != -1) 
+	{
+		memset(setting,0,sizeof(setting));
+        p = line;
+        q = strchr(line,' '); //search for space
+        len = (q-p) + 1;
+        strncpy(setting,p,len);
+	}
+
+	return;
+}
 void fDo_lshw(void)
 {
 	char *line = NULL;
@@ -308,7 +345,8 @@ void fDoSystemTuning(void)
 	char setting[256];
 	char value[256];
 	int count, intvalue, found = 0;
-		
+	FILE * tunDefSysCfgPtr = 0;	
+
 	fprintf(tunLogPtr,"\n\t\t\t***Start of Default System Tuning***\n");
 	fprintf(tunLogPtr,"\t\t\t***------------------------------***\n");
 
@@ -452,6 +490,8 @@ int main(int argc, char **argv)
 	fprintf(tunLogPtr, "Changing WorkFlow Phase***\n");
 	current_phase = ASSESSMENT;
 	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
+
+	fDoGetUserCfgValues();
 
 	fprintf(tunLogPtr, "Running gdv.sh - Shell script to Get default system valuesh***\n");
 
