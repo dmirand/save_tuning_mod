@@ -15,6 +15,7 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 #include <ctype.h>
 #include <getopt.h>
 #include <pthread.h>
+#include <signal.h>
 
 #define WORKFLOW_NAMES_MAX	4
 
@@ -46,6 +47,25 @@ const char *phase2str(enum workflow_phases phase)
         return NULL;
 }
 
+#define SIGINT_MSG "SIGINT received.\n"
+void sig_int_handler(int signum, siginfo_t *info, void *ptr)
+{
+    write(STDERR_FILENO, SIGINT_MSG, sizeof(SIGINT_MSG));
+    fprintf(tunLogPtr,"Caught SIGINT, exiting...\n");
+    fclose(tunLogPtr);
+    exit(0);
+}
+
+void catch_sigint()
+{
+    static struct sigaction _sigact;
+
+    memset(&_sigact, 0, sizeof(_sigact));
+    _sigact.sa_sigaction = sig_int_handler;
+    _sigact.sa_flags = SA_SIGINFO;
+
+    sigaction(SIGINT, &_sigact, NULL);
+}
 
 /* start of bpf stuff  ****/
 #ifndef PATH_MAX
@@ -514,6 +534,7 @@ void * fTalkToKernel(void * vargp)
 	char aMessage[512];
 	int * fd = (int *) vargp;
 
+	//catch_sigint();
 	while(1) 
 	{	
 		strcpy(aMessage,"This is a message...");
@@ -547,6 +568,7 @@ int main(int argc, char **argv)
 	int fd, err, vRetFromKernelThread, vRetFromKernelJoin;
 	pthread_t talkToKernelThread_id;
 
+	catch_sigint();
 	tunLogPtr = fopen("/tmp/tuningLog","w");
 	if (!tunLogPtr)
 	{
