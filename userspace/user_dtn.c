@@ -14,6 +14,7 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 #include <bits/types.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <pthread.h>
 
 #define WORKFLOW_NAMES_MAX	4
 
@@ -22,6 +23,7 @@ void fDoGetUserCfgValues(void);
 void fDoSystemtuning(void);
 void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
+static int gInterval = 2; //default
 
 enum workflow_phases {
 	STARTING,
@@ -44,7 +46,6 @@ const char *phase2str(enum workflow_phases phase)
         return NULL;
 }
 
-int fTalkToKernel(int fd);
 
 /* start of bpf stuff  ****/
 #ifndef PATH_MAX
@@ -91,14 +92,13 @@ static const struct option_wrapper long_options[] = {
     {{0, 0, NULL,  0 }}
 };
 
-int fDoRunBpfCollection(int argc, char **argv, int kernel_fd) 
+int fDoRunBpfCollection(int argc, char **argv) 
 {
 
     struct bpf_map_info map_expect = { 0 };
     struct bpf_map_info info = { 0 };
     char pin_dir[PATH_MAX];
     int buffer_map_fd;
-    int interval = 2;
     struct ring_buffer *rb;
     int len, err;
 
@@ -154,8 +154,7 @@ int fDoRunBpfCollection(int argc, char **argv, int kernel_fd)
     }
 	while (1) {
 			ring_buffer__consume(rb);
-			fTalkToKernel(kernel_fd);
-			sleep(interval);
+			sleep(gInterval);
 	}
     	
 }
@@ -227,6 +226,7 @@ void fDoGetUserCfgValues(void)
 				break;
             }
         }
+
 	}
 
 	fprintf(tunLogPtr,"Final user config values after using settings from %s:\n",pUserCfgFile);
@@ -234,8 +234,24 @@ void fDoGetUserCfgValues(void)
 	for (count = 0; count < NUMUSERVALUES; count++) 
 	{
 		fprintf(tunLogPtr,"%s, %s, %s\n",userValues[count].aUserValues, userValues[count].default_val, userValues[count].cfg_value);
+		if (strcmp(userValues[count].aUserValues,"evaluation_timer") == 0)
+		{
+				int cfg_val = atoi(userValues[count].cfg_value);
+				if (cfg_val == -1) //wasn't set properly
+					{
+						fprintf(tunLogPtr,"\n***Config value for %s is set to  %d. Using default value of  %s***\n",userValues[count].aUserValues, cfg_val, userValues[count].default_val);
+						gInterval = atoi(userValues[count].default_val);
+					}
+				else
+					{
+						fprintf(tunLogPtr,"\n***Using %s with a value %d***\n",userValues[count].aUserValues, cfg_val);
+						gInterval = cfg_val;
+					}
+		}
+
 	}
 
+	free(line); //must free
 	return;
 }
 
@@ -291,6 +307,7 @@ void fDo_lshw(void)
 								else
 								{
     								fprintf(tunLogPtr,"memory size in lshw is not niumerical***\n");
+									free(line);
 									return; // has to be a digit
 								}
 						}
@@ -314,6 +331,7 @@ void fDo_lshw(void)
 								else
 								{
     								fprintf(tunLogPtr,"memory size in lshw is not numerical***\n");
+									free(line);
 									return; // has to be a digit
 								}
 
@@ -338,7 +356,8 @@ void fDo_lshw(void)
 						break;
 			}
 	}
-
+	
+	free(line);
 return;
 }
 
@@ -484,33 +503,38 @@ void fDoSystemTuning(void)
 	fprintf(tunLogPtr,"\n\t\t\t***End of Default System Tuning***\n");
 	fprintf(tunLogPtr,"\t\t\t***----------------------------***\n\n");
 
-	if(line)
-		free(line);
+	free(line);
 
 	return;
 }
 
-int fTalkToKernel(int fd)
+void * fTalkToKernel(void * vargp)
 {
 	int result = 0;
 	char aMessage[512];
-		
-	strcpy(aMessage,"This is a message...");
-	result = write(fd,aMessage,strlen(aMessage));
-	if (result < 0)
-		fprintf(tunLogPtr,"There was an error writing***\n");
-	else
-		fprintf(tunLogPtr,"***GoodW**, message written to kernel module = ***%s***\n", aMessage);
+	int * fd = (int *) vargp;
 
-	memset(aMessage,0,512);
-	result = read(fd,aMessage,512);
-	if (result < 0)
-		fprintf(tunLogPtr,"There was an error readin***\n");
-	else
-		fprintf(tunLogPtr,"***GoodR**, message read = ***%s***\n", aMessage);
+	while(1) 
+	{	
+		strcpy(aMessage,"This is a message...");
 
-	fflush(tunLogPtr);
-	return result;
+		result = write(*fd,aMessage,strlen(aMessage));
+		if (result < 0)
+			fprintf(tunLogPtr,"There was an error writing***\n");
+		else
+			fprintf(tunLogPtr,"***GoodW**, message written to kernel module = ***%s***\n", aMessage);
+
+		memset(aMessage,0,512);
+		result = read(*fd,aMessage,512);
+
+		if (result < 0)
+			fprintf(tunLogPtr,"There was an error readin***\n");
+		else
+			fprintf(tunLogPtr,"***GoodR**, message read = ***%s***\n", aMessage);
+
+		fflush(tunLogPtr);
+		sleep(gInterval);
+	}
 }
 
 
@@ -520,7 +544,8 @@ int main(int argc, char **argv)
 {
 
 	char *pDevName = "/dev/tuningMod";
-	int fd, err;
+	int fd, err, vRetFromKernelThread, vRetFromKernelJoin;
+	pthread_t talkToKernelThread_id;
 
 	tunLogPtr = fopen("/tmp/tuningLog","w");
 	if (!tunLogPtr)
@@ -546,7 +571,9 @@ int main(int argc, char **argv)
 	fd = open(pDevName, O_RDWR,0);
 
 	if (fd > 0)
-		err = fTalkToKernel(fd);
+	{
+		vRetFromKernelThread = pthread_create(&talkToKernelThread_id, NULL, fTalkToKernel, &fd);
+	}
 	else
 	{
 		fprintf(tunLogPtr,"***Error opening kernel device, errno = %dn***\n",errno);
@@ -557,12 +584,14 @@ int main(int argc, char **argv)
 			
 	fflush(tunLogPtr);
 
-	err = fDoRunBpfCollection(argc, argv, fd);
+	err = fDoRunBpfCollection(argc, argv);
 	if (err)
 	{
 		fprintf(tunLogPtr, "***Err %d while starting up bpf Collector***\n",err);
 	}
 
+	if (vRetFromKernelThread == 0)
+    	vRetFromKernelJoin = pthread_join(talkToKernelThread_id, NULL);
 
 	if (fd > 0)
 		close(fd);
