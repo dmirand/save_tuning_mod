@@ -25,6 +25,7 @@ void fDoSystemtuning(void);
 void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
 static int gInterval = 2; //default
+static char netDevice[128];
 
 enum workflow_phases {
 	STARTING,
@@ -112,7 +113,12 @@ static const struct option_wrapper long_options[] = {
     {{0, 0, NULL,  0 }}
 };
 
-int fDoRunBpfCollection(int argc, char **argv) 
+typedef struct {
+		int argc;
+		char ** argv;
+} sArgv_t;
+
+void * fDoRunBpfCollection(void * vargp) 
 {
 
     struct bpf_map_info map_expect = { 0 };
@@ -127,26 +133,35 @@ int fDoRunBpfCollection(int argc, char **argv)
         .do_unload = false,
     };
 
+	sArgv_t * sArgv = (sArgv_t * ) vargp;
+
     /* Cmdline options can change progsec */
-    parse_cmdline_args(argc, argv, long_options, &cfg, __doc__);
+    parse_cmdline_args(sArgv->argc, sArgv->argv, long_options, &cfg, __doc__);
 
 	/* Required option */
     if (cfg.ifindex == -1) {
         fprintf(stderr, "ERR: required option --dev missing\n\n");
-        usage(argv[0], __doc__, long_options, (argc == 1));
-        return EXIT_FAIL_OPTION;
+        usage(sArgv->argv[0], __doc__, long_options, (sArgv->argc == 1));
+		fflush(stderr);
+		return (void *)1;
+        //return EXIT_FAIL_OPTION;
     }
 
 	/* Use the --dev name as subdir for finding pinned maps */
     len = snprintf(pin_dir, PATH_MAX, "%s/%s", pin_basedir, cfg.ifname);
     if (len < 0) {
         fprintf(stderr, "ERR: creating pin dirname\n");
-        return EXIT_FAIL_OPTION;
+		fflush(stderr);
+		return (void *)2;
+        //return EXIT_FAIL_OPTION;
     }
 
 	buffer_map_fd = open_bpf_map_file(pin_dir, "int_ring_buffer_me", &info);
     if (buffer_map_fd < 0) {
-        return EXIT_FAIL_BPF;
+        fprintf(stderr, "ERR: fail to get buffer map fd\n");
+		fflush(stderr);
+		return (void *)3;
+        //return EXIT_FAIL_BPF;
     }
 
     /* check map info, e.g. datarec is expected size */
@@ -154,7 +169,8 @@ int fDoRunBpfCollection(int argc, char **argv)
     err = check_map_fd_info(&info, &map_expect);
     if (err) {
         fprintf(stderr, "ERR: map via FD not compatible\n");
-        return err;
+		fflush(stderr);
+		return (void *)4;
     }
 
     if (verbose) {
@@ -169,14 +185,17 @@ int fDoRunBpfCollection(int argc, char **argv)
 
     if (!rb)
     {
-	    printf ("can't create ring buffer struct****\n");
-		    return -1;
+	    fprintf (stderr,"can't create ring buffer struct****\n");
+		fflush(stderr);
+		return (void *)6;
     }
+
 	while (1) {
 			ring_buffer__consume(rb);
 			sleep(gInterval);
 	}
     	
+	return (void *)7;
 }
 
 
@@ -191,9 +210,10 @@ typedef struct {
 	char cfg_value[32];
 } sUserValues_t[NUMUSERVALUES];
 
-sUserValues_t userValues = {{"evaluation_timer", "5", "-1"},
+sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
 			    {"learning_mode_only","y","-1"},
 			    {"API_listen_port","5523","-1"}
+
 			   };
 
 void fDoGetUserCfgValues(void)
@@ -256,21 +276,15 @@ void fDoGetUserCfgValues(void)
 		fprintf(tunLogPtr,"%s, %s, %s\n",userValues[count].aUserValues, userValues[count].default_val, userValues[count].cfg_value);
 		if (strcmp(userValues[count].aUserValues,"evaluation_timer") == 0)
 		{
-				int cfg_val = atoi(userValues[count].cfg_value);
-				if (cfg_val == -1) //wasn't set properly
-					{
-						fprintf(tunLogPtr,"\n***Config value for %s is set to  %d. Using default value of  %s***\n",userValues[count].aUserValues, cfg_val, userValues[count].default_val);
-						gInterval = atoi(userValues[count].default_val);
-					}
-				else
-					{
-						fprintf(tunLogPtr,"\n***Using %s with a value %d***\n",userValues[count].aUserValues, cfg_val);
-						gInterval = cfg_val;
-					}
+			int cfg_val = atoi(userValues[count].cfg_value);
+			if (cfg_val == -1) //wasn't set properly
+				gInterval = atoi(userValues[count].default_val);
+			else
+				gInterval = cfg_val;
 		}
-
 	}
 
+	fprintf(tunLogPtr,"\n***Using 'evaluation_timer' with value %d***\n", gInterval);
 	free(line); //must free
 	return;
 }
@@ -401,7 +415,7 @@ typedef struct {
  * Increase rmem_max and wmem_max so they are at least as large as the third 
  * values of tcp_rmem and tcp_wmem.
  */
-#define TUNING_NUMS	7
+#define TUNING_NUMS	8
 /* Must change TUNING_NUMS if adding more to the array below */
 
 host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
@@ -412,6 +426,7 @@ host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
     {"net.ipv4.tcp_mtu_probing",			   1,       	0,      	0},
     {"net.ipv4.tcp_congestion_control",	    htcp, 			0, 			0}, //uses #defines to help
     {"net.core.default_qdisc",		    fq_codel, 			0, 			0}, //uses #defines
+    {"MTU",		                               0, 		   84, 			0}
 };
 
 void fDoSystemTuning(void)
@@ -423,16 +438,19 @@ void fDoSystemTuning(void)
 	char *q, *r, *p = 0;
 	char setting[256];
 	char value[256];
+	char devMTUdata[256];
 	int count, intvalue, found = 0;
 	FILE * tunDefSysCfgPtr = 0;	
 
 	fprintf(tunLogPtr,"\n\t\t\t***Start of Default System Tuning***\n");
 	fprintf(tunLogPtr,"\t\t\t***------------------------------***\n");
 
-	fprintf(tunLogPtr, "\nRunning gdv.sh - Shell script to Get default system values***\n");
-        system("sh ./gdv.sh");
+	fprintf(tunLogPtr, "\nRunning gdv.sh - Shell script to Get current config settings***\n");
+    system("sh ./gdv.sh");
+    	sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> /tmp/current_config.orig", netDevice);
+	system(devMTUdata); 
 
-	tunDefSysCfgPtr = fopen("/tmp/default_sysctl_config","r");
+	tunDefSysCfgPtr = fopen("/tmp/current_config.orig","r");
 	if (!tunDefSysCfgPtr)
 	{
 		fprintf(tunLogPtr,"Could not open Tuning Module default system config file, exiting...\n");
@@ -444,8 +462,9 @@ void fDoSystemTuning(void)
 	fflush(tunLogPtr);
 
     while ((nread = getline(&line, &len, tunDefSysCfgPtr)) != -1) {
-    	//fprintf(tunLogPtr,"Retrieved line of length %zu:\n", nread);
-		//fprintf(tunLogPtr,"&%s&",line);
+    	//printf("Retrieved line of length %zu:\n", nread);
+		//printf("&%s&",line);
+		memset(setting,0,256);
 		p = line;
 		q = strchr(line,' '); //search for space	
 		len = (q-p) + 1;
@@ -459,6 +478,7 @@ void fDoSystemTuning(void)
 		/* compare with known list now */
 		for (count = 0; count < TUNING_NUMS; count++)
 		{
+			memset(value,0,256);
 			if (strcmp(aTuningNumsToUse[count].setting, setting) == 0) //found
 			{
 				q++;// move it up past the space
@@ -481,11 +501,18 @@ void fDoSystemTuning(void)
 						}
 						else
 							{//has min, default and max values
-								//more work needed			
-								fprintf(tunLogPtr,"Current config value for *XXXX***%s* is *%s*...\n",setting, value);	
+							//more work needed			
+								fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
 								fprintf(tunLogPtr,"You should change to the recommended setting of *%s* to *%d\t%d\t%d*.\n",setting, aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum);
 							}
 					}
+					else
+						if (strcmp(aTuningNumsToUse[count].setting, "MTU") == 0) //special case - will have to fix up
+						{
+							aTuningNumsToUse[count].xDefault = intvalue;
+							fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
+						}
+					
 				}	
 				else
 					{ //must be a string
@@ -524,7 +551,6 @@ void fDoSystemTuning(void)
 	fprintf(tunLogPtr,"\t\t\t***----------------------------***\n\n");
 
 	free(line);
-
 	return;
 }
 
@@ -565,9 +591,15 @@ int main(int argc, char **argv)
 {
 
 	char *pDevName = "/dev/tuningMod";
-	int fd, err, vRetFromKernelThread, vRetFromKernelJoin;
-	pthread_t talkToKernelThread_id;
+	int fd; 
+	int vRetFromKernelThread, vRetFromKernelJoin;
+	int vRetFromRunBpfThread, vRetFromRunBpfJoin;
+	pthread_t talkToKernelThread_id, doRunBpfCollectionThread_id;
+	sArgv_t sArgv;
 
+	sArgv.argc = argc;
+	sArgv.argv = argv;
+	
 	catch_sigint();
 	tunLogPtr = fopen("/tmp/tuningLog","w");
 	if (!tunLogPtr)
@@ -577,6 +609,15 @@ int main(int argc, char **argv)
 	}
 	fprintf(tunLogPtr, "tuning Log opened***\n");
 	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
+
+	if (argc == 3)
+		strcpy(netDevice,argv[2]);
+	else
+		{
+			fprintf(tunLogPtr, "Device name not supplied, exiting***\n");
+			exit(-3);
+		}
+		
 
 	fprintf(tunLogPtr, "***Changing WorkFlow Phase***\n");
 	current_phase = ASSESSMENT;
@@ -606,14 +647,13 @@ int main(int argc, char **argv)
 			
 	fflush(tunLogPtr);
 
-	err = fDoRunBpfCollection(argc, argv);
-	if (err)
-	{
-		fprintf(tunLogPtr, "***Err %d while starting up bpf Collector***\n",err);
-	}
+	vRetFromRunBpfThread = pthread_create(&doRunBpfCollectionThread_id, NULL, fDoRunBpfCollection, &sArgv);;
 
 	if (vRetFromKernelThread == 0)
     	vRetFromKernelJoin = pthread_join(talkToKernelThread_id, NULL);
+
+	if (vRetFromRunBpfThread == 0)
+    	vRetFromRunBpfJoin = pthread_join(doRunBpfCollectionThread_id, NULL);
 
 	if (fd > 0)
 		close(fd);
