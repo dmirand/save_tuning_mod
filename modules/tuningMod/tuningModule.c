@@ -92,7 +92,7 @@ int Process_Event_From_Collector(void)
 	y = x % 8000; /* print from 0 to 7999 */
 	TuningModule_Wrapper_Sleep(y);
 	down(&readlock);
-	sprintf(writetest,"***Processed event from Collector*** %ld:%ld", count,y);
+	sprintf(writetest,"***Processed event from Kernel*** %ld:%ld", count,y);
 	up(&readlock);
 
 	return 0;

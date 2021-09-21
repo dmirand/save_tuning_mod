@@ -141,7 +141,7 @@ int  xdp_test_ringbuf_func(struct xdp_md *ctx)
   }
 
   ev->numb = count;
-  strcpy(ev->filename, "David");
+  strcpy(ev->filename, "MetaData");
 
   bpf_ringbuf_submit(ev, 0);
 

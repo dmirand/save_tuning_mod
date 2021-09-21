@@ -190,6 +190,7 @@ void * fDoRunBpfCollection(void * vargp)
 		return (void *)6;
     }
 
+	fprintf(tunLogPtr,"***Starting communication with Collector Module...***\n");
 	while (1) {
 			ring_buffer__consume(rb);
 			sleep(gInterval);
@@ -397,9 +398,9 @@ return;
 
 /* This works with tuning Module */
 
-#define htcp 		0
+#define bbr 		0
 #define fq_codel 	1
-char *aStringval[] ={"htcp", "fq_codel"};
+char *aStringval[] ={"bbr", "fq_codel"};
 
 typedef struct {
     char * setting;
@@ -424,7 +425,7 @@ host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
     {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
     {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
     {"net.ipv4.tcp_mtu_probing",			   1,       	0,      	0},
-    {"net.ipv4.tcp_congestion_control",	    htcp, 			0, 			0}, //uses #defines to help
+    {"net.ipv4.tcp_congestion_control",	    bbr, 			0, 			0}, //uses #defines to help
     {"net.core.default_qdisc",		    fq_codel, 			0, 			0}, //uses #defines
     {"MTU",		                               0, 		   84, 			0}
 };
@@ -560,6 +561,8 @@ void * fTalkToKernel(void * vargp)
 	char aMessage[512];
 	int * fd = (int *) vargp;
 
+
+	fprintf(tunLogPtr,"***Starting communication with kernel module...***\n");
 	//catch_sigint();
 	while(1) 
 	{	
