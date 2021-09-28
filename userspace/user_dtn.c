@@ -19,6 +19,13 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 
 #define WORKFLOW_NAMES_MAX	4
 
+static void gettime(time_t *clk, char *ctime_buf) 
+{
+    *clk = time(NULL);
+	ctime_r(clk,ctime_buf);
+    ctime_buf[24] = ':';
+}
+
 FILE * tunLogPtr = 0;
 void fDoGetUserCfgValues(void);
 void fDoSystemtuning(void);
@@ -127,6 +134,8 @@ void * fDoRunBpfCollection(void * vargp)
     int buffer_map_fd;
     struct ring_buffer *rb;
     int len, err;
+    time_t clk;
+    char ctime_buf[27];
 
     struct config cfg = {
         .ifindex   = -1,
@@ -190,7 +199,8 @@ void * fDoRunBpfCollection(void * vargp)
 		return (void *)6;
     }
 
-	fprintf(tunLogPtr,"***Starting communication with Collector Module...***\n");
+    gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s ***Starting communication with Collector Module...***\n", ctime_buf);
 	while (1) {
 			ring_buffer__consume(rb);
 			sleep(gInterval);
@@ -226,12 +236,18 @@ void fDoGetUserCfgValues(void)
     char *p = 0;
     char setting[256];
 	int count = 0;
+    time_t clk;
+    char ctime_buf[27];
+	char *header[] = {"Name", "Default Value", "Configured Value"};
     
-	fprintf(tunLogPtr,"\nOpening user provide config file: *%s*\n",pUserCfgFile);
+    gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"\n%s Opening user provide config file: *%s*\n",ctime_buf, pUserCfgFile);
 	userCfgPtr = fopen(pUserCfgFile,"r");
 	if (!userCfgPtr)
 	{
-    	fprintf(tunLogPtr,"\nOpening of %s failed, errno = %d\n",pUserCfgFile, errno);
+		int save_errno = errno;
+    	gettime(&clk, ctime_buf);
+    	fprintf(tunLogPtr,"\n%s Opening of %s failed, errno = %d\n",ctime_buf, pUserCfgFile, save_errno);
 		return;
 		
 	}
@@ -270,11 +286,15 @@ void fDoGetUserCfgValues(void)
 
 	}
 
-	fprintf(tunLogPtr,"Final user config values after using settings from %s:\n",pUserCfgFile);
-	fprintf(tunLogPtr,"\nName, Default Value, Configured Value\n");
+#define PAD_MAX	27
+#define HEADER_PAD	35
+#define CONST_PAD	12
+    gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s Final user config values after using settings from %s:\n",ctime_buf, pUserCfgFile);
+	fprintf(tunLogPtr,"\n%s %*s %20s\n", header[0], HEADER_PAD, header[1], header[2]);
 	for (count = 0; count < NUMUSERVALUES; count++) 
-	{
-		fprintf(tunLogPtr,"%s, %s, %s\n",userValues[count].aUserValues, userValues[count].default_val, userValues[count].cfg_value);
+	{	int vPad = PAD_MAX-(strlen(userValues[count].aUserValues) - CONST_PAD);
+		fprintf(tunLogPtr,"%s %*s %20s\n",userValues[count].aUserValues, vPad, userValues[count].default_val, userValues[count].cfg_value);
 		if (strcmp(userValues[count].aUserValues,"evaluation_timer") == 0)
 		{
 			int cfg_val = atoi(userValues[count].cfg_value);
@@ -285,7 +305,8 @@ void fDoGetUserCfgValues(void)
 		}
 	}
 
-	fprintf(tunLogPtr,"\n***Using 'evaluation_timer' with value %d***\n", gInterval);
+    gettime(&clk, ctime_buf);
+	//fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d***\n", ctime_buf, gInterval);
 	free(line); //must free
 	return;
 }
@@ -418,7 +439,7 @@ typedef struct {
  */
 #define TUNING_NUMS	8
 /* Must change TUNING_NUMS if adding more to the array below */
-
+#if 0
 host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
     {"net.core.rmem_max",   			67108864,       	0,      	0},
     {"net.core.wmem_max",   			67108864,       	0,      	0},
@@ -429,7 +450,17 @@ host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
     {"net.core.default_qdisc",		    fq_codel, 			0, 			0}, //uses #defines
     {"MTU",		                               0, 		   84, 			0}
 };
-
+#endif
+host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
+    {"net.core.rmem_max",   			67108864,       	0,      	0},
+    {"net.core.wmem_max",   			67108864,       	0,      	0},
+    {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
+    {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
+    {"net.ipv4.tcp_mtu_probing",			   1,       	0,      	0},
+    {"net.ipv4.tcp_congestion_control",	    bbr, 			0, 			0}, //uses #defines to help
+    {"net.core.default_qdisc",		    fq_codel, 			0, 			0}, //uses #defines
+    {"MTU",		                               0, 		   84, 			0}
+};
 void fDoSystemTuning(void)
 {
 
@@ -442,24 +473,34 @@ void fDoSystemTuning(void)
 	char devMTUdata[256];
 	int count, intvalue, found = 0;
 	FILE * tunDefSysCfgPtr = 0;	
+	time_t clk;
+    char ctime_buf[27];
+	char *pFileCurrentConfigSettings = "/tmp/current_config.orig";
 
-	fprintf(tunLogPtr,"\n\t\t\t***Start of Default System Tuning***\n");
-	fprintf(tunLogPtr,"\t\t\t***------------------------------***\n");
 
-	fprintf(tunLogPtr, "\nRunning gdv.sh - Shell script to Get current config settings***\n");
+    gettime(&clk, ctime_buf);
+
+	fprintf(tunLogPtr,"\n\n%s ***Start of Default System Tuning***\n", ctime_buf);
+	fprintf(tunLogPtr,"%s ***------------------------------***\n", ctime_buf);
+
+	fprintf(tunLogPtr, "\n%s Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf);
+
     system("sh ./gdv.sh");
-    	sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> /tmp/current_config.orig", netDevice);
+    //sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> /tmp/current_config.orig", netDevice);
+    sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> %s", netDevice, pFileCurrentConfigSettings);
 	system(devMTUdata); 
 
-	tunDefSysCfgPtr = fopen("/tmp/current_config.orig","r");
+	//tunDefSysCfgPtr = fopen("/tmp/current_config.orig","r");
+	tunDefSysCfgPtr = fopen(pFileCurrentConfigSettings,"r");
 	if (!tunDefSysCfgPtr)
 	{
-		fprintf(tunLogPtr,"Could not open Tuning Module default system config file, exiting...\n");
+    	gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s Could not open Tuning Module default current config file, '%s', exiting...\n", ctime_buf, pFileCurrentConfigSettings);
 		fclose(tunLogPtr);
 		exit(-2);
 	}
 
-	fprintf(tunLogPtr, "Tuning Module default system configuration file opened***\n");
+	fprintf(tunLogPtr, "%s Tuning Module default current configuration file, '%s', opened***\n", ctime_buf, pFileCurrentConfigSettings);
 	fflush(tunLogPtr);
 
     while ((nread = getline(&line, &len, tunDefSysCfgPtr)) != -1) {
@@ -560,27 +601,32 @@ void * fTalkToKernel(void * vargp)
 	int result = 0;
 	char aMessage[512];
 	int * fd = (int *) vargp;
+	time_t clk;
+    char ctime_buf[27];
 
 
-	fprintf(tunLogPtr,"***Starting communication with kernel module...***\n");
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s ***Starting communication with kernel module...***\n", ctime_buf);
 	//catch_sigint();
 	while(1) 
 	{	
 		strcpy(aMessage,"This is a message...");
 
 		result = write(*fd,aMessage,strlen(aMessage));
+		gettime(&clk, ctime_buf);
 		if (result < 0)
-			fprintf(tunLogPtr,"There was an error writing***\n");
+			fprintf(tunLogPtr,"%s There was an error writing***\n", ctime_buf);
 		else
-			fprintf(tunLogPtr,"***GoodW**, message written to kernel module = ***%s***\n", aMessage);
+			fprintf(tunLogPtr,"%s ***message written to kernel module = ***%s***\n", ctime_buf, aMessage);
 
 		memset(aMessage,0,512);
 		result = read(*fd,aMessage,512);
+		gettime(&clk, ctime_buf);
 
 		if (result < 0)
-			fprintf(tunLogPtr,"There was an error readin***\n");
+			fprintf(tunLogPtr,"%s There was an error readin***\n", ctime_buf);
 		else
-			fprintf(tunLogPtr,"***GoodR**, message read = ***%s***\n", aMessage);
+			fprintf(tunLogPtr,"%s ***message read from kernel module = ***%s***\n", ctime_buf, aMessage);
 
 		fflush(tunLogPtr);
 		sleep(gInterval);
@@ -599,6 +645,8 @@ int main(int argc, char **argv)
 	int vRetFromRunBpfThread, vRetFromRunBpfJoin;
 	pthread_t talkToKernelThread_id, doRunBpfCollectionThread_id;
 	sArgv_t sArgv;
+	time_t clk;
+	char ctime_buf[27];
 
 	sArgv.argc = argc;
 	sArgv.argv = argv;
@@ -610,29 +658,34 @@ int main(int argc, char **argv)
 		printf("Could not open tuning Logfile, exiting...\n");
 		exit(-1);
 	}
-	fprintf(tunLogPtr, "tuning Log opened***\n");
-	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
+
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, "%s tuning Log opened***\n", ctime_buf);
+	fprintf(tunLogPtr, "%s WorkFlow Current Phase is %s***\n", ctime_buf, phase2str(current_phase));
 
 	if (argc == 3)
 		strcpy(netDevice,argv[2]);
 	else
 		{
-			fprintf(tunLogPtr, "Device name not supplied, exiting***\n");
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr, "%s Device name not supplied, exiting***\n", ctime_buf);
 			exit(-3);
 		}
 		
 
-	fprintf(tunLogPtr, "***Changing WorkFlow Phase***\n");
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, "%s ***Changing WorkFlow Phase***\n", ctime_buf);
 	current_phase = ASSESSMENT;
-	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
+	fprintf(tunLogPtr, "%s WorkFlow Current Phase is %s***\n", ctime_buf, phase2str(current_phase));
 
 	fDoGetUserCfgValues();
 
 	fDoSystemTuning();
 
-	fprintf(tunLogPtr, "***Changing WorkFlow Phase***\n");
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, "%s ***Changing WorkFlow Phase***\n", ctime_buf);
 	current_phase = LEARNING;
-	fprintf(tunLogPtr, "WorkFlow Current Phase is %s***\n", phase2str(current_phase));
+	fprintf(tunLogPtr, "%s WorkFlow Current Phase is %s***\n", ctime_buf, phase2str(current_phase));
 	
 	fd = open(pDevName, O_RDWR,0);
 
@@ -642,8 +695,10 @@ int main(int argc, char **argv)
 	}
 	else
 	{
-		fprintf(tunLogPtr,"***Error opening kernel device, errno = %dn***\n",errno);
-		fprintf(tunLogPtr, "Closing tuning Log and exiting***\n");
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s ***Error opening kernel device, errno = %dn***\n",ctime_buf, save_errno);
+		fprintf(tunLogPtr, "%s Closing tuning Log and exiting***\n", ctime_buf);
 		fclose(tunLogPtr);
 		exit(-8);
 	}
@@ -661,7 +716,8 @@ int main(int argc, char **argv)
 	if (fd > 0)
 		close(fd);
 
-	fprintf(tunLogPtr, "Closing tuning Log***\n");
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, " %s Closing tuning Log***\n", ctime_buf);
 	fclose(tunLogPtr);
 
 return 0;
