@@ -33,7 +33,9 @@ void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
 static int gInterval = 2; //default
 static char gTuningMode = 'n';
+static char gApplyDefSysTuning = 'n';
 static char netDevice[128];
+
 
 enum workflow_phases {
 	STARTING,
@@ -214,7 +216,7 @@ void * fDoRunBpfCollection(void * vargp)
 /* End of bpf stuff ****/
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	3
+#define NUMUSERVALUES	4
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -224,7 +226,8 @@ typedef struct {
 
 sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
 			    {"learning_mode_only","y","-1"},
-			    {"API_listen_port","5523","-1"}
+			    {"API_listen_port","5523","-1"},
+				{"apply_default_system_tuning","n","-1"}
 
 			   };
 
@@ -287,9 +290,10 @@ void fDoGetUserCfgValues(void)
 
 	}
 
-#define PAD_MAX	39
-//#define PAD_MAX	27
-#define HEADER_PAD	35
+//#define PAD_MAX	39
+#define PAD_MAX	49
+#define HEADER_PAD	45
+//#define HEADER_PAD	35
 #define CONST_PAD	12
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s Final user config values after using settings from %s:\n",ctime_buf, pUserCfgFile);
@@ -312,6 +316,12 @@ void fDoGetUserCfgValues(void)
 				if (userValues[count].cfg_value[0] == 'n') 
 					gTuningMode = 'y';
 			}
+			else
+				if (strcmp(userValues[count].aUserValues,"apply_default_system_tuning") == 0)
+				{
+					if (userValues[count].cfg_value[0] == 'y') 
+						gApplyDefSysTuning = 'y';
+				}
 	}
 
     gettime(&clk, ctime_buf);
@@ -494,6 +504,7 @@ void fDoSystemTuning(void)
     char ctime_buf[27];
 	char *pFileCurrentConfigSettings = "/tmp/current_config.orig";
 	char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
+	char aApplyDefTun[768];
 
     gettime(&clk, ctime_buf);
 
@@ -570,7 +581,15 @@ void fDoSystemTuning(void)
 							//fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
 							//fprintf(tunLogPtr,"You should change to the recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
 							fprintf(tunLogPtr,"%*s", vPad, value);	
-							fprintf(tunLogPtr,"%26d %20c\n",aTuningNumsToUse[count].minimum, gTuningMode);
+							fprintf(tunLogPtr,"%26d %20c\n",aTuningNumsToUse[count].minimum, gApplyDefSysTuning);
+							
+							if (gApplyDefSysTuning == 'y')
+							{
+								//Apply Inital DefSys Tuning
+								sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
+								printf("%s\n",aApplyDefTun);	
+								//system(aApplyDefTun);
+							}
 						}
 						else
 							{//has min, default and max values - get them...
@@ -628,8 +647,15 @@ void fDoSystemTuning(void)
 									y = sprintf(strValmax,"%d",aTuningNumsToUse[count].maximum);
 									total += y;
 									vPad = SETTINGS_PAD_MAX3-total;
-									//fprintf(tunLogPtr,"%11d %d %d %20c y = %d\n", aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum, gTuningMode,total);
-									fprintf(tunLogPtr,"%*s %s %s %20c\n", vPad, strValmin, strValdef, strValmax, gTuningMode);
+									//fprintf(tunLogPtr,"%11d %d %d %20c y = %d\n", aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum, gApplyDefSysTuning,total);
+									fprintf(tunLogPtr,"%*s %s %s %20c\n", vPad, strValmin, strValdef, strValmax, gApplyDefSysTuning);
+									if (gApplyDefSysTuning == 'y')
+									{
+										//Apply Inital DefSys Tuning
+										sprintf(aApplyDefTun,"sysctl -w %s=%s %s %s",setting, strValmin, strValdef, strValmax);
+										printf("%s\n",aApplyDefTun);	
+										//system(aApplyDefTun);
+									}
 								}
 							//	printf("*value = *%s*, min=***%s***, def=***%s***, max=***%s***\n", value, min, def, max);	
 								
@@ -651,12 +677,28 @@ void fDoSystemTuning(void)
 							//fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is not the same as the recommendation...\n",setting, value);	
 							//fprintf(tunLogPtr,"You should change to the recommended setting of *%s* for *%s*.\n",aStringval[aTuningNumsToUse[count].minimum], setting);
 							fprintf(tunLogPtr,"%*s", vPad, value);	
-							fprintf(tunLogPtr,"%26s %20c\n",aStringval[aTuningNumsToUse[count].minimum], gTuningMode);
+							fprintf(tunLogPtr,"%26s %20c\n",aStringval[aTuningNumsToUse[count].minimum], gApplyDefSysTuning);
+							if (gApplyDefSysTuning == 'y')
+							{
+								//Apply Inital DefSys Tuning
+								sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
+								printf("%s\n",aApplyDefTun);	
+								//system(aApplyDefTun);
+							}
 						}
 						else
 							{
 								//fprintf(tunLogPtr,"Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
-								fprintf(tunLogPtr,"%*s %25s %20c\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], gTuningMode);	
+								//fprintf(tunLogPtr,"%*s %25s %20c\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], gApplyDefSysTuning);	
+								fprintf(tunLogPtr,"%*s %25s %20s\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], "as");	
+								if (gApplyDefSysTuning == 'y')
+								{
+									//Apply Inital Def
+									//No need to apply - already set...
+									sprintf(aApplyDefTun,"no need to apply for %s=%s since already set...",setting, aStringval[aTuningNumsToUse[count].minimum]);
+									printf("%s\n",aApplyDefTun);	
+									//system(aApplyDefTun);
+								}
 							}
 							
 					}
