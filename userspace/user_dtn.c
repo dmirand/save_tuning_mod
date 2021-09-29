@@ -32,6 +32,7 @@ void fDoSystemtuning(void);
 void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
 static int gInterval = 2; //default
+static char gTuningMode = 'n';
 static char netDevice[128];
 
 enum workflow_phases {
@@ -286,14 +287,16 @@ void fDoGetUserCfgValues(void)
 
 	}
 
-#define PAD_MAX	27
+#define PAD_MAX	39
+//#define PAD_MAX	27
 #define HEADER_PAD	35
 #define CONST_PAD	12
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s Final user config values after using settings from %s:\n",ctime_buf, pUserCfgFile);
 	fprintf(tunLogPtr,"\n%s %*s %20s\n", header[0], HEADER_PAD, header[1], header[2]);
 	for (count = 0; count < NUMUSERVALUES; count++) 
-	{	int vPad = PAD_MAX-(strlen(userValues[count].aUserValues) - CONST_PAD);
+	{	int vPad = PAD_MAX-(strlen(userValues[count].aUserValues));
+		//int vPad = PAD_MAX-(strlen(userValues[count].aUserValues) - CONST_PAD);
 		fprintf(tunLogPtr,"%s %*s %20s\n",userValues[count].aUserValues, vPad, userValues[count].default_val, userValues[count].cfg_value);
 		if (strcmp(userValues[count].aUserValues,"evaluation_timer") == 0)
 		{
@@ -303,6 +306,12 @@ void fDoGetUserCfgValues(void)
 			else
 				gInterval = cfg_val;
 		}
+		else
+			if (strcmp(userValues[count].aUserValues,"learning_mode_only") == 0)
+			{
+				if (userValues[count].cfg_value[0] == 'n') 
+					gTuningMode = 'y';
+			}
 	}
 
     gettime(&clk, ctime_buf);
@@ -323,13 +332,16 @@ void fDo_lshw(void)
 	char savesize[16];
 	char savecap[16];
 	char savelinesize[256];
+	time_t clk;
+    char ctime_buf[27];
 
 	system("sudo lshw > /tmp/lswh_output 2>&1");
 
 	lswh_ptr = fopen("/tmp/lswh_output","r");
+	gettime(&clk, ctime_buf);
 	if (!lswh_ptr)
 	{
-    	fprintf(tunLogPtr,"Could not open lswh file to check more comparisons.\n");
+    	fprintf(tunLogPtr,"%s Could not open lswh file to check more comparisons.\n", ctime_buf);
 		return;
 	}
 
@@ -338,7 +350,8 @@ void fDo_lshw(void)
 				case 0:
 	    			if (strstr(line,"*-memory\n"))
 	    			{
-    						fprintf(tunLogPtr,"\nThe utility 'lshw' reports for memory:\n");
+							gettime(&clk, ctime_buf);
+    						fprintf(tunLogPtr,"\n%s The utility 'lshw' reports for memory:\n", ctime_buf);
 							count++;
 							state = 1;
 					}
@@ -362,7 +375,8 @@ void fDo_lshw(void)
 								}
 								else
 								{
-    								fprintf(tunLogPtr,"memory size in lshw is not niumerical***\n");
+									gettime(&clk, ctime_buf);
+    								fprintf(tunLogPtr,"%s memory size in lshw is not niumerical***\n", ctime_buf);
 									free(line);
 									return; // has to be a digit
 								}
@@ -386,22 +400,25 @@ void fDo_lshw(void)
 								}
 								else
 								{
-    								fprintf(tunLogPtr,"memory size in lshw is not numerical***\n");
+									gettime(&clk, ctime_buf);
+    								fprintf(tunLogPtr,"%s memory size in lshw is not numerical***\n", ctime_buf);
 									free(line);
 									return; // has to be a digit
 								}
+									
+								gettime(&clk, ctime_buf);
 
 								if (strcmp(savecap,savesize) == 0)
 								{
-									fprintf(tunLogPtr,"maximum memory installed in system\n");
-									fprintf(tunLogPtr,"%s",line);
-									fprintf(tunLogPtr,"%s",savelinesize);
+									fprintf(tunLogPtr,"%s maximum memory installed in system\n", ctime_buf);
+									fprintf(tunLogPtr,"%50s",line);
+									fprintf(tunLogPtr,"%50s",savelinesize);
 								}
 								else
 								{
-									fprintf(tunLogPtr,"%s",line);
-									fprintf(tunLogPtr,"%s",savelinesize);
-									fprintf(tunLogPtr,"you could install more memory in the system if you wish...\n");
+									fprintf(tunLogPtr,"%50s",line);
+									fprintf(tunLogPtr,"%50s",savelinesize);
+									fprintf(tunLogPtr,"%s you could install more memory in the system if you wish...\n", ctime_buf);
 								}
 								found = 1;
 
@@ -426,7 +443,7 @@ char *aStringval[] ={"bbr", "fq_codel"};
 typedef struct {
     char * setting;
     uint32_t  minimum;
-    uint32_t xDefault; //if default is 0, then default and max are nops
+    int xDefault; //if default is -1, then default and max are nops
     uint32_t maximum;
 }host_tuning_vals_t;
 
@@ -441,24 +458,24 @@ typedef struct {
 /* Must change TUNING_NUMS if adding more to the array below */
 #if 0
 host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
-    {"net.core.rmem_max",   			67108864,       	0,      	0},
-    {"net.core.wmem_max",   			67108864,       	0,      	0},
+    {"net.core.rmem_max",   			67108864,       	-1,      	0},
+    {"net.core.wmem_max",   			67108864,       	-1,      	0},
     {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
     {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
-    {"net.ipv4.tcp_mtu_probing",			   1,       	0,      	0},
-    {"net.ipv4.tcp_congestion_control",	    bbr, 			0, 			0}, //uses #defines to help
-    {"net.core.default_qdisc",		    fq_codel, 			0, 			0}, //uses #defines
+    {"net.ipv4.tcp_mtu_probing",			   1,       	-1,      	0},
+    {"net.ipv4.tcp_congestion_control",	    bbr, 			-1, 			0}, //uses #defines to help
+    {"net.core.default_qdisc",		    fq_codel, 			-1, 			0}, //uses #defines
     {"MTU",		                               0, 		   84, 			0}
 };
 #endif
 host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
-    {"net.core.rmem_max",   			67108864,       	0,      	0},
-    {"net.core.wmem_max",   			67108864,       	0,      	0},
+    {"net.core.rmem_max",   			67108864,       	-1,      	0},
+    {"net.core.wmem_max",   			67108864,       	-1,      	0},
+    {"net.ipv4.tcp_mtu_probing",			   1,       	-1,      	0},
+    {"net.ipv4.tcp_congestion_control",	    bbr, 			-1, 			0}, //uses #defines to help
+    {"net.core.default_qdisc",		    fq_codel, 			-1, 			0}, //uses #defines
     {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
     {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
-    {"net.ipv4.tcp_mtu_probing",			   1,       	0,      	0},
-    {"net.ipv4.tcp_congestion_control",	    bbr, 			0, 			0}, //uses #defines to help
-    {"net.core.default_qdisc",		    fq_codel, 			0, 			0}, //uses #defines
     {"MTU",		                               0, 		   84, 			0}
 };
 void fDoSystemTuning(void)
@@ -476,17 +493,18 @@ void fDoSystemTuning(void)
 	time_t clk;
     char ctime_buf[27];
 	char *pFileCurrentConfigSettings = "/tmp/current_config.orig";
-
+	char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
 
     gettime(&clk, ctime_buf);
 
 	fprintf(tunLogPtr,"\n\n%s ***Start of Default System Tuning***\n", ctime_buf);
 	fprintf(tunLogPtr,"%s ***------------------------------***\n", ctime_buf);
-
-	fprintf(tunLogPtr, "\n%s Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf);
+	fprintf(tunLogPtr, "%s Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf);
 
     system("sh ./gdv.sh");
     //sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> /tmp/current_config.orig", netDevice);
+    gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, "%s Getting current MTU value on system***\n", ctime_buf);
     sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> %s", netDevice, pFileCurrentConfigSettings);
 	system(devMTUdata); 
 
@@ -500,7 +518,16 @@ void fDoSystemTuning(void)
 		exit(-2);
 	}
 
+    gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s Tuning Module default current configuration file, '%s', opened***\n", ctime_buf, pFileCurrentConfigSettings);
+	fprintf(tunLogPtr, "%s ***NOTE - Some settings have a minimum, default and maximum values, while others only have a single value***\n\n", ctime_buf);
+
+#define SETTINGS_PAD_MAX 58
+//#define SETTINGS_PAD_MAX 46
+#define HEADER_SETTINGS_PAD  50
+//#define CONST_PAD   12
+    //fprintf(tunLogPtr,"\n%s %*s %20s\n", header[0], HEADER_PAD, header[1], header[2]);
+	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
 	fflush(tunLogPtr);
 
     while ((nread = getline(&line, &len, tunDefSysCfgPtr)) != -1) {
@@ -516,13 +543,15 @@ void fDoSystemTuning(void)
 		else
 			setting[len] = 0;
 
-		fprintf(tunLogPtr,"\nsetting is ***%s***\n",setting);
+		fprintf(tunLogPtr,"%s",setting);
+		//fprintf(tunLogPtr,"\nsetting is ***%s***\n",setting);
 		/* compare with known list now */
 		for (count = 0; count < TUNING_NUMS; count++)
 		{
 			memset(value,0,256);
 			if (strcmp(aTuningNumsToUse[count].setting, setting) == 0) //found
 			{
+				int vPad = SETTINGS_PAD_MAX-(strlen(setting));
 				q++;// move it up past the space
 				q = strchr(q,' '); //search for next space	
 				q++; // move to the beginning of 1st (maybe only) number
@@ -536,23 +565,82 @@ void fDoSystemTuning(void)
 					intvalue = atoi(value);
 					if(intvalue <= aTuningNumsToUse[count].minimum)
 					{
-						if (aTuningNumsToUse[count].xDefault == 0) //only one value
+						if (aTuningNumsToUse[count].xDefault == -1) //only one value
 						{
-							fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
-							fprintf(tunLogPtr,"You should change to the recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
+							//fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
+							//fprintf(tunLogPtr,"You should change to the recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
+							fprintf(tunLogPtr,"%*s", vPad, value);	
+							fprintf(tunLogPtr,"%26d %20c\n",aTuningNumsToUse[count].minimum, gTuningMode);
 						}
 						else
-							{//has min, default and max values
-							//more work needed			
-								fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
-								fprintf(tunLogPtr,"You should change to the recommended setting of *%s* to *%d\t%d\t%d*.\n",setting, aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum);
+							{//has min, default and max values - get them...
+								//fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
+								//fprintf(tunLogPtr,"You should change to the recommended setting of *%s* to *%d\t%d\t%d*.\n",setting, aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum);
+								//Let's parse the value stringand get the min, etc. separaately
+								int i, j;
+								char min[256];
+								char def[256];
+								char max[256];
+								memset(min,0,256);
+								memset(def,0,256);
+								memset(max,0,256);
+								i = 0;
+								while (isdigit(value[i]))
+								{
+									min[i] = value[i];
+									i++;
+								}
+
+								while(!isdigit(value[i]))
+									i++;
+							
+								j = 0;
+								while (isdigit(value[i]))
+								{
+									def[j] = value[i];
+									i++;
+									j++;
+								}
+								
+								while(!isdigit(value[i]))
+									i++;
+
+								j = 0;
+								while (isdigit(value[i]))
+								{
+									max[j] = value[i];
+									i++;
+									j++;
+								}
+#define SETTINGS_PAD_MAX2 43
+								vPad = SETTINGS_PAD_MAX2-(strlen(min) + strlen(def) + strlen(max));
+								fprintf(tunLogPtr,"%*s %s %s", vPad, min, def, max);	
+#define SETTINGS_PAD_MAX3 28
+								{
+									char strValmin[128];
+									char strValdef[128];
+									char strValmax[128];
+									int total;
+									int y = sprintf(strValmin,"%d",aTuningNumsToUse[count].minimum);
+									total = y;
+									y = sprintf(strValdef,"%d",aTuningNumsToUse[count].xDefault);
+									total += y;
+									y = sprintf(strValmax,"%d",aTuningNumsToUse[count].maximum);
+									total += y;
+									vPad = SETTINGS_PAD_MAX3-total;
+									//fprintf(tunLogPtr,"%11d %d %d %20c y = %d\n", aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum, gTuningMode,total);
+									fprintf(tunLogPtr,"%*s %s %s %20c\n", vPad, strValmin, strValdef, strValmax, gTuningMode);
+								}
+							//	printf("*value = *%s*, min=***%s***, def=***%s***, max=***%s***\n", value, min, def, max);	
+								
 							}
 					}
 					else
 						if (strcmp(aTuningNumsToUse[count].setting, "MTU") == 0) //special case - will have to fix up
 						{
 							aTuningNumsToUse[count].xDefault = intvalue;
-							fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
+							//fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
+							fprintf(tunLogPtr,"%*s%26s %20c\n",vPad, value, "-", '-');	
 						}
 					
 				}	
@@ -560,12 +648,15 @@ void fDoSystemTuning(void)
 					{ //must be a string
 						if (strcmp(value, aStringval[aTuningNumsToUse[count].minimum]) != 0)
 						{
-							fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is not the same as the recommendation...\n",setting, value);	
-							fprintf(tunLogPtr,"You should change to the recommended setting of *%s* for *%s*.\n",aStringval[aTuningNumsToUse[count].minimum], setting);
+							//fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is not the same as the recommendation...\n",setting, value);	
+							//fprintf(tunLogPtr,"You should change to the recommended setting of *%s* for *%s*.\n",aStringval[aTuningNumsToUse[count].minimum], setting);
+							fprintf(tunLogPtr,"%*s", vPad, value);	
+							fprintf(tunLogPtr,"%26s %20c\n",aStringval[aTuningNumsToUse[count].minimum], gTuningMode);
 						}
 						else
 							{
-								fprintf(tunLogPtr,"Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
+								//fprintf(tunLogPtr,"Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
+								fprintf(tunLogPtr,"%*s %25s %20c\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], gTuningMode);	
 							}
 							
 					}
@@ -583,14 +674,16 @@ void fDoSystemTuning(void)
 	/* find additional things that could be tuned */
 	fDo_lshw();
 
-	fprintf(tunLogPtr,"\n***For additional info about your hardware settings and capabilities, please run \n");
-	fprintf(tunLogPtr,"***'sudo dmidecore' and/or 'sudo lshw'. \n\n");
+    gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"\n%s ***For additional info about your hardware settings and capabilities, please run \n", ctime_buf);
+	fprintf(tunLogPtr,"%s ***'sudo dmidecore' and/or 'sudo lshw'. \n\n", ctime_buf);
 
-	fprintf(tunLogPtr, "\n***Closing Tuning Module default system configuration file***\n");
+	fprintf(tunLogPtr, "\n%s ***Closing Tuning Module default system configuration file***\n", ctime_buf);
 	fclose(tunDefSysCfgPtr);
 
-	fprintf(tunLogPtr,"\n\t\t\t***End of Default System Tuning***\n");
-	fprintf(tunLogPtr,"\t\t\t***----------------------------***\n\n");
+    gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"\n%s ***End of Default System Tuning***\n", ctime_buf);
+	fprintf(tunLogPtr,"%s ***----------------------------***\n\n", ctime_buf);
 
 	free(line);
 	return;
