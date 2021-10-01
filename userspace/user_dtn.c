@@ -486,7 +486,7 @@ host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
     {"net.core.default_qdisc",		    fq_codel, 			-1, 			0}, //uses #defines
     {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
     {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
-    {"MTU",		                               0, 		   84, 			0}
+    {"MTU",		                               0, 		   84, 			0} //Will leave here but using for now
 };
 void fDoSystemTuning(void)
 {
@@ -497,7 +497,9 @@ void fDoSystemTuning(void)
 	char *q, *r, *p = 0;
 	char setting[256];
 	char value[256];
+#if 0
 	char devMTUdata[256];
+#endif
 	int count, intvalue, found = 0;
 	FILE * tunDefSysCfgPtr = 0;	
 	time_t clk;
@@ -513,13 +515,12 @@ void fDoSystemTuning(void)
 	fprintf(tunLogPtr, "%s Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf);
 
     system("sh ./gdv.sh");
-    //sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> /tmp/current_config.orig", netDevice);
+#if 0
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s Getting current MTU value on system***\n", ctime_buf);
     sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> %s", netDevice, pFileCurrentConfigSettings);
 	system(devMTUdata); 
-
-	//tunDefSysCfgPtr = fopen("/tmp/current_config.orig","r");
+#endif
 	tunDefSysCfgPtr = fopen(pFileCurrentConfigSettings,"r");
 	if (!tunDefSysCfgPtr)
 	{
@@ -661,8 +662,8 @@ void fDoSystemTuning(void)
 								
 							}
 					}
-					else
-						if (strcmp(aTuningNumsToUse[count].setting, "MTU") == 0) //special case - will have to fix up
+					else //Leaving out this case for now
+						if (strcmp(aTuningNumsToUse[count].setting, "MTU") == 0) //special case - will have to fix up - not using currently
 						{
 							aTuningNumsToUse[count].xDefault = intvalue;
 							//fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
@@ -690,7 +691,7 @@ void fDoSystemTuning(void)
 							{
 								//fprintf(tunLogPtr,"Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
 								//fprintf(tunLogPtr,"%*s %25s %20c\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], gApplyDefSysTuning);	
-								fprintf(tunLogPtr,"%*s %25s %20s\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], "as");	
+								fprintf(tunLogPtr,"%*s %25s %20s\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], "na");	
 								if (gApplyDefSysTuning == 'y')
 								{
 									//Apply Inital Def
