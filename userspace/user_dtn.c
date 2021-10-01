@@ -113,7 +113,6 @@ static int read_buffer_sample(void *ctx, void *data, size_t len)
 	struct event *evt = (struct event *)data;
 
 	gettime(&clk, ctime_buf);
-	//fprintf(tunLogPtr,"%s %s: ***Starting communication with Collector Module...***\n", ctime_buf, phase2str(current_phase));
   	fprintf(tunLogPtr,"%s %s: %s::: %lld %lld %lld %lld %lld %lld\n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module", evt->numb1, evt->numb2,evt->numb3,evt->numb4,evt->numb5,evt->numb6);
 
 	return 0;
@@ -212,7 +211,7 @@ void * fDoRunBpfCollection(void * vargp)
     }
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"%s %s: ***Starting communication with Collector Module...***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: Starting communication with Collector Module...***\n", ctime_buf, phase2str(current_phase));
 	while (1) {
 			ring_buffer__consume(rb);
 			sleep(gInterval);
@@ -254,7 +253,7 @@ void fDoGetUserCfgValues(void)
 	char *header[] = {"Name", "Default Value", "Configured Value"};
     
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s %s: Opening user provide config file: *%s*\n",ctime_buf, phase2str(current_phase), pUserCfgFile);
+	fprintf(tunLogPtr,"\n%s %s: Opening user provided config file: *%s*\n",ctime_buf, phase2str(current_phase), pUserCfgFile);
 	userCfgPtr = fopen(pUserCfgFile,"r");
 	if (!userCfgPtr)
 	{
