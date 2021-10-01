@@ -44,6 +44,8 @@ enum workflow_phases {
     TUNING,
 };
 
+static enum workflow_phases current_phase = STARTING;
+
 static const char *workflow_names[WORKFLOW_NAMES_MAX] = {
         "STARTING",
         "ASSESSMENT",
@@ -104,10 +106,17 @@ const char *pin_basedir =  "/sys/fs/bpf";
 #include "common_kern_user.h"
 #include "bpf_util.h" /* bpf_num_possible_cpus */
 
-static int read_buffer_sample(void *ctx, void *data, size_t len) {
-  struct event *evt = (struct event *)data;
-  printf("%lld ::: %s\n", evt->numb, evt->filename);
-  return 0;
+static int read_buffer_sample(void *ctx, void *data, size_t len) 
+{
+	time_t clk;
+	char ctime_buf[27];
+	struct event *evt = (struct event *)data;
+
+	gettime(&clk, ctime_buf);
+	//fprintf(tunLogPtr,"%s %s: ***Starting communication with Collector Module...***\n", ctime_buf, phase2str(current_phase));
+  	fprintf(tunLogPtr,"%s %s: %s::: %lld %lld %lld %lld %lld %lld\n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module", evt->numb1, evt->numb2,evt->numb3,evt->numb4,evt->numb5,evt->numb6);
+
+	return 0;
 }
 
 static const struct option_wrapper long_options[] = {
@@ -168,7 +177,7 @@ void * fDoRunBpfCollection(void * vargp)
         //return EXIT_FAIL_OPTION;
     }
 
-	buffer_map_fd = open_bpf_map_file(pin_dir, "int_ring_buffer_me", &info);
+	buffer_map_fd = open_bpf_map_file(pin_dir, "int_ring_buffer", &info);
     if (buffer_map_fd < 0) {
         fprintf(stderr, "ERR: fail to get buffer map fd\n");
 		fflush(stderr);
@@ -203,7 +212,7 @@ void * fDoRunBpfCollection(void * vargp)
     }
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"%s ***Starting communication with Collector Module...***\n", ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Starting communication with Collector Module...***\n", ctime_buf, phase2str(current_phase));
 	while (1) {
 			ring_buffer__consume(rb);
 			sleep(gInterval);
@@ -245,13 +254,13 @@ void fDoGetUserCfgValues(void)
 	char *header[] = {"Name", "Default Value", "Configured Value"};
     
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s Opening user provide config file: *%s*\n",ctime_buf, pUserCfgFile);
+	fprintf(tunLogPtr,"\n%s %s: Opening user provide config file: *%s*\n",ctime_buf, phase2str(current_phase), pUserCfgFile);
 	userCfgPtr = fopen(pUserCfgFile,"r");
 	if (!userCfgPtr)
 	{
 		int save_errno = errno;
     	gettime(&clk, ctime_buf);
-    	fprintf(tunLogPtr,"\n%s Opening of %s failed, errno = %d\n",ctime_buf, pUserCfgFile, save_errno);
+    	fprintf(tunLogPtr,"\n%s %s: Opening of %s failed, errno = %d\n",ctime_buf, phase2str(current_phase), pUserCfgFile, save_errno);
 		return;
 		
 	}
@@ -296,7 +305,7 @@ void fDoGetUserCfgValues(void)
 //#define HEADER_PAD	35
 #define CONST_PAD	12
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"%s Final user config values after using settings from %s:\n",ctime_buf, pUserCfgFile);
+	fprintf(tunLogPtr,"%s %s: Final user config values after using settings from %s:\n",ctime_buf, phase2str(current_phase), pUserCfgFile);
 	fprintf(tunLogPtr,"\n%s %*s %20s\n", header[0], HEADER_PAD, header[1], header[2]);
 	for (count = 0; count < NUMUSERVALUES; count++) 
 	{	int vPad = PAD_MAX-(strlen(userValues[count].aUserValues));
@@ -351,7 +360,7 @@ void fDo_lshw(void)
 	gettime(&clk, ctime_buf);
 	if (!lswh_ptr)
 	{
-    	fprintf(tunLogPtr,"%s Could not open lswh file to check more comparisons.\n", ctime_buf);
+    	fprintf(tunLogPtr,"%s %s: Could not open lswh file to check more comparisons.\n", ctime_buf, phase2str(current_phase));
 		return;
 	}
 
@@ -361,7 +370,7 @@ void fDo_lshw(void)
 	    			if (strstr(line,"*-memory\n"))
 	    			{
 							gettime(&clk, ctime_buf);
-    						fprintf(tunLogPtr,"\n%s The utility 'lshw' reports for memory:\n", ctime_buf);
+    						fprintf(tunLogPtr,"\n%s %s: The utility 'lshw' reports for memory:\n", ctime_buf, phase2str(current_phase));
 							count++;
 							state = 1;
 					}
@@ -386,7 +395,7 @@ void fDo_lshw(void)
 								else
 								{
 									gettime(&clk, ctime_buf);
-    								fprintf(tunLogPtr,"%s memory size in lshw is not niumerical***\n", ctime_buf);
+    								fprintf(tunLogPtr,"%s %s: memory size in lshw is not niumerical***\n", ctime_buf, phase2str(current_phase));
 									free(line);
 									return; // has to be a digit
 								}
@@ -411,7 +420,7 @@ void fDo_lshw(void)
 								else
 								{
 									gettime(&clk, ctime_buf);
-    								fprintf(tunLogPtr,"%s memory size in lshw is not numerical***\n", ctime_buf);
+    								fprintf(tunLogPtr,"%s %s: memory size in lshw is not numerical***\n", ctime_buf, phase2str(current_phase));
 									free(line);
 									return; // has to be a digit
 								}
@@ -420,15 +429,15 @@ void fDo_lshw(void)
 
 								if (strcmp(savecap,savesize) == 0)
 								{
-									fprintf(tunLogPtr,"%s maximum memory installed in system\n", ctime_buf);
-									fprintf(tunLogPtr,"%50s",line);
-									fprintf(tunLogPtr,"%50s",savelinesize);
+									fprintf(tunLogPtr,"%s %s: maximum memory installed in system\n", ctime_buf, phase2str(current_phase));
+									fprintf(tunLogPtr,"%62s",line);
+									fprintf(tunLogPtr,"%62s",savelinesize);
 								}
 								else
 								{
-									fprintf(tunLogPtr,"%50s",line);
-									fprintf(tunLogPtr,"%50s",savelinesize);
-									fprintf(tunLogPtr,"%s you could install more memory in the system if you wish...\n", ctime_buf);
+									fprintf(tunLogPtr,"%62s",line);
+									fprintf(tunLogPtr,"%62s",savelinesize);
+									fprintf(tunLogPtr,"%s %s: you could install more memory in the system if you wish...\n", ctime_buf, phase2str(current_phase));
 								}
 								found = 1;
 
@@ -510,9 +519,9 @@ void fDoSystemTuning(void)
 
     gettime(&clk, ctime_buf);
 
-	fprintf(tunLogPtr,"\n\n%s ***Start of Default System Tuning***\n", ctime_buf);
-	fprintf(tunLogPtr,"%s ***------------------------------***\n", ctime_buf);
-	fprintf(tunLogPtr, "%s Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf);
+	fprintf(tunLogPtr,"\n\n%s %s: ***Start of Default System Tuning***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***------------------------------***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr, "%s %s: Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf, phase2str(current_phase));
 
     system("sh ./gdv.sh");
 #if 0
@@ -525,17 +534,16 @@ void fDoSystemTuning(void)
 	if (!tunDefSysCfgPtr)
 	{
     	gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr,"%s Could not open Tuning Module default current config file, '%s', exiting...\n", ctime_buf, pFileCurrentConfigSettings);
+		fprintf(tunLogPtr,"%s %s: Could not open Tuning Module default current config file, '%s', exiting...\n", ctime_buf, phase2str(current_phase), pFileCurrentConfigSettings);
 		fclose(tunLogPtr);
 		exit(-2);
 	}
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, "%s Tuning Module default current configuration file, '%s', opened***\n", ctime_buf, pFileCurrentConfigSettings);
-	fprintf(tunLogPtr, "%s ***NOTE - Some settings have a minimum, default and maximum values, while others only have a single value***\n\n", ctime_buf);
+	fprintf(tunLogPtr, "%s %s: Tuning Module default current configuration file, '%s', opened***\n", ctime_buf, phase2str(current_phase), pFileCurrentConfigSettings);
+	fprintf(tunLogPtr, "%s %s: ***NOTE - Some settings have a minimum, default and maximum values, while others only have a single value***\n\n", ctime_buf, phase2str(current_phase));
 
 #define SETTINGS_PAD_MAX 58
-//#define SETTINGS_PAD_MAX 46
 #define HEADER_SETTINGS_PAD  50
 //#define CONST_PAD   12
     //fprintf(tunLogPtr,"\n%s %*s %20s\n", header[0], HEADER_PAD, header[1], header[2]);
@@ -710,7 +718,10 @@ void fDoSystemTuning(void)
 		}
 
 		if (!found)
-			fprintf(tunLogPtr,"ERR*** Could not find the following setting **%s**\n", setting);
+		{
+    		gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"%s %s: ERR*** Could not find the following setting **%s**\n", ctime_buf, phase2str(current_phase), setting);
+		}
 		
 	}
 
@@ -718,15 +729,15 @@ void fDoSystemTuning(void)
 	fDo_lshw();
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s ***For additional info about your hardware settings and capabilities, please run \n", ctime_buf);
-	fprintf(tunLogPtr,"%s ***'sudo dmidecore' and/or 'sudo lshw'. \n\n", ctime_buf);
+	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities, please run \n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***'sudo dmidecore' and/or 'sudo lshw'. \n\n", ctime_buf, phase2str(current_phase));
 
-	fprintf(tunLogPtr, "\n%s ***Closing Tuning Module default system configuration file***\n", ctime_buf);
+	fprintf(tunLogPtr, "\n%s %s: ***Closing Tuning Module default system configuration file***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunDefSysCfgPtr);
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s ***End of Default System Tuning***\n", ctime_buf);
-	fprintf(tunLogPtr,"%s ***----------------------------***\n\n", ctime_buf);
+	fprintf(tunLogPtr,"\n%s %s: ***End of Default System Tuning***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***----------------------------***\n\n", ctime_buf, phase2str(current_phase));
 
 	free(line);
 	return;
@@ -742,7 +753,7 @@ void * fTalkToKernel(void * vargp)
 
 
 	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"%s ***Starting communication with kernel module...***\n", ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Starting communication with kernel module...***\n", ctime_buf, phase2str(current_phase));
 	//catch_sigint();
 	while(1) 
 	{	
@@ -751,26 +762,24 @@ void * fTalkToKernel(void * vargp)
 		result = write(*fd,aMessage,strlen(aMessage));
 		gettime(&clk, ctime_buf);
 		if (result < 0)
-			fprintf(tunLogPtr,"%s There was an error writing***\n", ctime_buf);
+			fprintf(tunLogPtr,"%s %s: There was an error writing***\n", ctime_buf, phase2str(current_phase));
 		else
-			fprintf(tunLogPtr,"%s ***message written to kernel module = ***%s***\n", ctime_buf, aMessage);
+			fprintf(tunLogPtr,"%s %s: ***message written to kernel module = ***%s***\n", ctime_buf, phase2str(current_phase), aMessage);
 
 		memset(aMessage,0,512);
 		result = read(*fd,aMessage,512);
 		gettime(&clk, ctime_buf);
 
 		if (result < 0)
-			fprintf(tunLogPtr,"%s There was an error readin***\n", ctime_buf);
+			fprintf(tunLogPtr,"%s %s: There was an error readin***\n", ctime_buf, phase2str(current_phase));
 		else
-			fprintf(tunLogPtr,"%s ***message read from kernel module = ***%s***\n", ctime_buf, aMessage);
+			fprintf(tunLogPtr,"%s %s: ***message read from kernel module = ***%s***\n", ctime_buf, phase2str(current_phase), aMessage);
 
 		fflush(tunLogPtr);
 		sleep(gInterval);
 	}
 }
 
-
-static enum workflow_phases current_phase = STARTING;
 
 int main(int argc, char **argv) 
 {
@@ -796,32 +805,29 @@ int main(int argc, char **argv)
 	}
 
 	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, "%s tuning Log opened***\n", ctime_buf);
-	fprintf(tunLogPtr, "%s WorkFlow Current Phase is %s***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr, "%s %s: tuning Log opened***\n", ctime_buf, phase2str(current_phase));
 
 	if (argc == 3)
 		strcpy(netDevice,argv[2]);
 	else
 		{
 			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr, "%s Device name not supplied, exiting***\n", ctime_buf);
+			fprintf(tunLogPtr, "%s %s: Device name not supplied, exiting***\n", ctime_buf, phase2str(current_phase));
 			exit(-3);
 		}
 		
 
 	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, "%s ***Changing WorkFlow Phase***\n", ctime_buf);
 	current_phase = ASSESSMENT;
-	fprintf(tunLogPtr, "%s WorkFlow Current Phase is %s***\n", ctime_buf, phase2str(current_phase));
 
 	fDoGetUserCfgValues();
 
 	fDoSystemTuning();
 
 	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, "%s ***Changing WorkFlow Phase***\n", ctime_buf);
+	//fprintf(tunLogPtr, "%s ***Changing WorkFlow Phase***\n", ctime_buf);
 	current_phase = LEARNING;
-	fprintf(tunLogPtr, "%s WorkFlow Current Phase is %s***\n", ctime_buf, phase2str(current_phase));
+	//fprintf(tunLogPtr, "%s WorkFlow Current Phase is %s***\n", ctime_buf, phase2str(current_phase));
 	
 	fd = open(pDevName, O_RDWR,0);
 
@@ -833,8 +839,8 @@ int main(int argc, char **argv)
 	{
 		int save_errno = errno;
 		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr,"%s ***Error opening kernel device, errno = %dn***\n",ctime_buf, save_errno);
-		fprintf(tunLogPtr, "%s Closing tuning Log and exiting***\n", ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Error opening kernel device, errno = %dn***\n",ctime_buf, phase2str(current_phase), save_errno);
+		fprintf(tunLogPtr, "%s %s: Closing tuning Log and exiting***\n", ctime_buf, phase2str(current_phase));
 		fclose(tunLogPtr);
 		exit(-8);
 	}
@@ -853,7 +859,7 @@ int main(int argc, char **argv)
 		close(fd);
 
 	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, " %s Closing tuning Log***\n", ctime_buf);
+	fprintf(tunLogPtr, "%s %s: Closing tuning Log***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunLogPtr);
 
 return 0;

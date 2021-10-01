@@ -13,8 +13,12 @@ struct datarec {
 };
 
 struct event {
-  __u64 numb;
-  char filename[16];
+  __u64 numb1;
+  __u64 numb2;
+  __u64 numb3;
+  __u64 numb4;
+  __u64 numb5;
+  __u64 numb6;
 };
 
 #define ARR_LEN 8

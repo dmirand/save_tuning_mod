@@ -39,7 +39,7 @@ struct bpf_map_def SEC("maps") xdp_test_map = {
 };
 #endif
 #if 1
-struct bpf_map_def SEC("maps") int_ring_buffer_me = {
+struct bpf_map_def SEC("maps") int_ring_buffer = {
         .type        = BPF_MAP_TYPE_RINGBUF,
         .max_entries = 1 << 14,
 };
@@ -133,15 +133,20 @@ int  xdp_test_ringbuf_func(struct xdp_md *ctx)
 	__u32 action = XDP_PASS;
 
 	//int count2 = 3;
-	struct event *ev = bpf_ringbuf_reserve(&int_ring_buffer_me, sizeof(struct event), 0);
+	struct event *ev = bpf_ringbuf_reserve(&int_ring_buffer, sizeof(struct event), 0);
   
 	if (!ev) {
 		bpf_printk("xdp_test_ringbuf: Could not reserve event, count = %llu\n",count);
    		return action;
   }
 
-  ev->numb = count;
-  strcpy(ev->filename, "MetaData");
+  ev->numb1 = count;
+  ev->numb2 = count + 99;
+  ev->numb3 = count + 88;
+  ev->numb4 = count + 77;
+  ev->numb5 = count + 66;
+  ev->numb6 = count + 55;
+  //strcpy(ev->filename, "MetaData from Collector Module");
 
   bpf_ringbuf_submit(ev, 0);
 
