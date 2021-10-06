@@ -62,11 +62,10 @@ typedef struct {
 } sUserValues_t[NUMUSERVALUES];
 
 sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
-			    {"learning_mode_only","y","-1"},
-			    {"API_listen_port","5523","-1"},
-				{"apply_default_system_tuning","n","-1"}
-
-			   };
+			    			{"learning_mode_only","y","-1"},
+			    			{"API_listen_port","5523","-1"},
+							{"apply_default_system_tuning","n","-1"}
+			   			   };
 
 void fDoGetUserCfgValues(void)
 {
