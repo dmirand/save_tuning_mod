@@ -1,0 +1,4 @@
+evaluation_timer		3
+learning_mode_only		y
+API_listen_port			5566 
+apply_default_system_tuning	n
