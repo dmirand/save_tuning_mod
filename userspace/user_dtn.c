@@ -26,12 +26,34 @@ static void gettime(time_t *clk, char *ctime_buf)
     ctime_buf[24] = ':';
 }
 
+/* msleep(): Sleep for the requested number of milliseconds. */
+int msleep(long msec)
+{
+    struct timespec ts;
+    int res;
+
+    if (msec < 0)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ts.tv_sec = msec / 1000;
+    ts.tv_nsec = (msec % 1000) * 1000000;
+
+    do {
+        res = nanosleep(&ts, &ts);
+    } while (res && errno == EINTR);
+
+    return res;
+}
+
 FILE * tunLogPtr = 0;
 void fDoGetUserCfgValues(void);
 void fDoSystemtuning(void);
 void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
-static int gInterval = 2; //default
+static int gInterval = 2; //default in seconds
 static char gTuningMode = 'n';
 static char gApplyDefSysTuning = 'n';
 static char netDevice[128];
@@ -333,7 +355,7 @@ void fDoGetUserCfgValues(void)
 	}
 
     gettime(&clk, ctime_buf);
-	//fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d***\n", ctime_buf, gInterval);
+	fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d seconds***\n", ctime_buf, gInterval);
 	free(line); //must free
 	return;
 }

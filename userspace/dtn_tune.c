@@ -49,9 +49,6 @@ const char *phase2str(enum workflow_phases phase)
         return NULL;
 }
 
-#include <locale.h>
-#include <time.h>
-
 /* Must change NUMUSERVALUES below if adding more values */
 #define NUMUSERVALUES	4
 #define USERVALUEMAXLENGTH	256
@@ -220,7 +217,7 @@ void fDo_lshw(void)
 								else
 								{
 									gettime(&clk, ctime_buf);
-    								fprintf(tunLogPtr,"%s %s: memory size in lshw is not niumerical***\n", ctime_buf, phase2str(current_phase));
+    								fprintf(tunLogPtr,"%s %s: memory size in lshw is not numerical***\n", ctime_buf, phase2str(current_phase));
 									free(line);
 									return; // has to be a digit
 								}
@@ -306,7 +303,7 @@ host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
     {"net.core.default_qdisc",		         fq, 			-1,			0}, //uses #defines
     {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
     {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
-    {"MTU",		                               0, 		   84, 			0} //Will leave here but using for now
+    {"MTU",		                               0, 		   84, 			0} //Will leave here but not using for now
 };
 void fDoSystemTuning(void)
 {
