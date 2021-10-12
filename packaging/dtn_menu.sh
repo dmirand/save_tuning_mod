@@ -37,17 +37,24 @@ prune_logs()
 		return 0
 	fi
 	rm -rf /tmp/tuningLogOld.*
+	echo 0 > /tmp/tuningLog.count
 	enter_to_continue
 	return 0
 }
 
 run_dtntune()
 {
+logcount=
 	clear_screen
 	printf '\n###%s\n\n' "Running Tuning Assessment..."
 	if [ -f /tmp/tuningLog ]
 	then
-		cp /tmp/tuningLog /tmp/tuningLogOld.$$
+		logcount=`tail -1 /tmp/tuningLog.count`
+		cp /tmp/tuningLog /tmp/tuningLogOld.$logcount
+		logcount=`expr $logcount + 1`
+		echo $logcount >> /tmp/tuningLog.count
+	else
+		echo 0 > /tmp/tuningLog.count
 	fi
 	./dtn_tune
 	if [ $? = 0 ]
