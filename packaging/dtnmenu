@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# zogmenu - scripts launched at login of zogadmin to provide a menu of 
+# dtnmenu - scripts launched for dtntune to provide a menu of 
 # routine admintstative tasks
 #
 
