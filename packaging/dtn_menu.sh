@@ -49,10 +49,10 @@ logcount=
 	printf '\n###%s\n\n' "Running Tuning Assessment..."
 	if [ -f /tmp/tuningLog ]
 	then
-		logcount=`tail -1 /tmp/tuningLog.count`
+		logcount=`cat /tmp/tuningLog.count`
 		cp /tmp/tuningLog /tmp/tuningLogOld.$logcount
 		logcount=`expr $logcount + 1`
-		echo $logcount >> /tmp/tuningLog.count
+		echo $logcount > /tmp/tuningLog.count
 	else
 		echo 0 > /tmp/tuningLog.count
 	fi
