@@ -64,7 +64,7 @@ run_dtntune()
 	while  [ $repeat_main = 1 ]
 	do
 		clear_screen
-		printf '\n\n\t%s\n\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s' \
+		printf '\n\n\t%s\n\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s' \
 			"DTN Tuning Utility" \
 			"1) Run DTN Tune" \
 			"2) Prune Old Logs" \
