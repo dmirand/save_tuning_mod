@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# zogmenu - scripts launched at login of zogadmin to provide a menu of 
+# routine admintstative tasks
+#
+
+# when viewing this script, set tabstops to 4
+
+# main execution thread
+tty > /dev/null 2>&1
+tty_result=$?
+#
+# if the tty command fails, this script is executed as part of the login
+# of a desktop login. Just leave. in that case
+#
+if [ $tty_result = 0 ]
+then
+	sh dtn_menu.sh
+fi
+exit 0
+
