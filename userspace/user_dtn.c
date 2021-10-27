@@ -54,7 +54,7 @@ void fDoSystemtuning(void);
 void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
 static int gInterval = 2; //default in seconds
-static char gTuningMode = 'n';
+static char gTuningMode = 0;
 static char gApplyDefSysTuning = 'n';
 static char netDevice[128];
 
@@ -133,9 +133,15 @@ static int read_buffer_sample(void *ctx, void *data, size_t len)
 	time_t clk;
 	char ctime_buf[27];
 	struct event *evt = (struct event *)data;
-
+	int	 do_something;
 	gettime(&clk, ctime_buf);
   	fprintf(tunLogPtr,"%s %s: %s::: %lld %lld %lld %lld %lld %lld\n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module", evt->numb1, evt->numb2,evt->numb3,evt->numb4,evt->numb5,evt->numb6);
+
+	if (gTuningMode)
+	{
+  	//	fprintf(tunLogPtr,"%s %s: %s::: %lld %lld %lld %lld %lld %lld\n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module", evt->numb1, evt->numb2,evt->numb3,evt->numb4,evt->numb5,evt->numb6);
+		do_something = 1;
+	}
 
 	return 0;
 }
@@ -234,6 +240,9 @@ void * fDoRunBpfCollection(void * vargp)
 
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: Starting communication with Collector Module...***\n", ctime_buf, phase2str(current_phase));
+
+	if (gTuningMode) 
+			current_phase = TUNING;
 	while (1) {
 			ring_buffer__consume(rb);
 			sleep(gInterval);
@@ -344,7 +353,7 @@ void fDoGetUserCfgValues(void)
 			if (strcmp(userValues[count].aUserValues,"learning_mode_only") == 0)
 			{
 				if (userValues[count].cfg_value[0] == 'n') 
-					gTuningMode = 'y';
+					gTuningMode = 1;
 			}
 			else
 				if (strcmp(userValues[count].aUserValues,"apply_default_system_tuning") == 0)

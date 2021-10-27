@@ -23,7 +23,7 @@ void fDoSystemtuning(void);
 void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
 static int gInterval = 2; //default
-static char gTuningMode = 'n';
+static char gTuningMode = 0;
 static char gApplyDefSysTuning = 'n';
 
 enum workflow_phases {
@@ -145,7 +145,7 @@ void fDoGetUserCfgValues(void)
 			if (strcmp(userValues[count].aUserValues,"learning_mode_only") == 0)
 			{
 				if (userValues[count].cfg_value[0] == 'n') 
-					gTuningMode = 'y';
+					gTuningMode = 1;
 			}
 			else
 				if (strcmp(userValues[count].aUserValues,"apply_default_system_tuning") == 0)
