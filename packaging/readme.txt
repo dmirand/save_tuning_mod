@@ -38,6 +38,18 @@ it should apply the initial tuning recommendations during the ASSESSMENT phase
 or not. The default value is “n” which means it should not apply the initial
 tuning recommendations.                  
 
+e. apply_bios_tuning
+The apply_bios_tuning parameter is use to tell the Tuning Module if after 
+evaluating the BIOS configuration, it should apply the recommendations
+itself or not. The default is "n" which means it should make the 
+recommendations to the DTN operator, but not apply them itself.
+
+f. apply_nic_tuning
+The apply_nic_tuning parameter is use to tell the Tuning Module if after 
+evaluating the NIC configuration, it should apply the recommendations
+itself or not. The default is "n" which means it should make the 
+recommendations to the DTN operator, but not apply them itself.
+
 
 gdv.sh 
 ======
@@ -135,5 +147,12 @@ net.core.netdev_budget_usecs = 8000
  ***
  ***/
 net.core.netdev_max_backlog = 1000 
+
+/***
+ ***Increase transmission queue of interface. 
+ ***Example provided here. Probably can increase more.
+ ***
+ ***/
+ifconfig ethXXX txqueuelen 10000 
 
 

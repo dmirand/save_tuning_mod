@@ -50,11 +50,15 @@ int msleep(long msec)
 
 FILE * tunLogPtr = 0;
 void fDoGetUserCfgValues(void);
+void fDoBiosTuning(void);
+void fDoNicTuning(void);
 void fDoSystemtuning(void);
 void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
 static int gInterval = 2; //default in seconds
 static char gTuningMode = 0;
+static char gApplyBiosTuning = 'n';
+static char gApplyNicTuning = 'n';
 static char gApplyDefSysTuning = 'n';
 static char netDevice[128];
 
@@ -134,6 +138,7 @@ static int read_buffer_sample(void *ctx, void *data, size_t len)
 	char ctime_buf[27];
 	struct event *evt = (struct event *)data;
 	int	 do_something;
+
 	gettime(&clk, ctime_buf);
   	fprintf(tunLogPtr,"%s %s: %s::: %lld %lld %lld %lld %lld %lld\n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module", evt->numb1, evt->numb2,evt->numb3,evt->numb4,evt->numb5,evt->numb6);
 
@@ -188,9 +193,10 @@ void * fDoRunBpfCollection(void * vargp)
 
 	/* Required option */
     if (cfg.ifindex == -1) {
-        fprintf(stderr, "ERR: required option --dev missing\n\n");
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: ERR: required option --dev missing\n\n", ctime_buf, phase2str(current_phase));
         usage(sArgv->argv[0], __doc__, long_options, (sArgv->argc == 1));
-		fflush(stderr);
+		fflush(tunLogPtr);
 		return (void *)1;
         //return EXIT_FAIL_OPTION;
     }
@@ -198,16 +204,18 @@ void * fDoRunBpfCollection(void * vargp)
 	/* Use the --dev name as subdir for finding pinned maps */
     len = snprintf(pin_dir, PATH_MAX, "%s/%s", pin_basedir, cfg.ifname);
     if (len < 0) {
-        fprintf(stderr, "ERR: creating pin dirname\n");
-		fflush(stderr);
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: ERR: creating pin dirname\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
 		return (void *)2;
         //return EXIT_FAIL_OPTION;
     }
 
 	buffer_map_fd = open_bpf_map_file(pin_dir, "int_ring_buffer", &info);
     if (buffer_map_fd < 0) {
-        fprintf(stderr, "ERR: fail to get buffer map fd\n");
-		fflush(stderr);
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: ERR: fail to get buffer map fd\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
 		return (void *)3;
         //return EXIT_FAIL_BPF;
     }
@@ -216,15 +224,17 @@ void * fDoRunBpfCollection(void * vargp)
     map_expect.max_entries = 1 << 14;
     err = check_map_fd_info(&info, &map_expect);
     if (err) {
-        fprintf(stderr, "ERR: map via FD not compatible\n");
-		fflush(stderr);
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: ERR: map via FD not compatible\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
 		return (void *)4;
     }
 
     if (verbose) {
-        printf("\nCollecting stats from BPF map\n");
-        printf(" - BPF map (bpf_map_type:%d) id:%d name:%s"
-               " max_entries:%d\n",
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"\n%s %s: Collecting stats from BPF map\n", ctime_buf, phase2str(current_phase));
+        fprintf(tunLogPtr,"%s %s: - BPF map (bpf_map_type:%d) id:%d name:%s"
+               " max_entries:%d\n", ctime_buf, phase2str(current_phase),
                info.type, info.id, info.name, info.max_entries
                );
     }
@@ -233,8 +243,9 @@ void * fDoRunBpfCollection(void * vargp)
 
     if (!rb)
     {
-	    fprintf (stderr,"can't create ring buffer struct****\n");
-		fflush(stderr);
+    	gettime(&clk, ctime_buf);
+	    fprintf (tunLogPtr,"%s %s: can't create ring buffer struct****\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
 		return (void *)6;
     }
 
@@ -242,7 +253,8 @@ void * fDoRunBpfCollection(void * vargp)
 	fprintf(tunLogPtr,"%s %s: Starting communication with Collector Module...***\n", ctime_buf, phase2str(current_phase));
 
 	if (gTuningMode) 
-			current_phase = TUNING;
+		current_phase = TUNING;
+
 	while (1) {
 			ring_buffer__consume(rb);
 			sleep(gInterval);
@@ -255,7 +267,7 @@ void * fDoRunBpfCollection(void * vargp)
 /* End of bpf stuff ****/
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	4
+#define NUMUSERVALUES	6
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -266,7 +278,9 @@ typedef struct {
 sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
 			    {"learning_mode_only","y","-1"},
 			    {"API_listen_port","5523","-1"},
-				{"apply_default_system_tuning","n","-1"}
+				{"apply_default_system_tuning","n","-1"},
+				{"apply_bios_tuning","n","-1"},
+				{"apply_nic_tuning","n","-1"}
 
 			   };
 
@@ -336,6 +350,7 @@ void fDoGetUserCfgValues(void)
 #define CONST_PAD	12
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: Final user config values after using settings from %s:\n",ctime_buf, phase2str(current_phase), pUserCfgFile);
+	fprintf(tunLogPtr,"%s %s: A configured value of -1 means the setting was not configured and the default value will be used.\n",ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,"\n%s %*s %20s\n", header[0], HEADER_PAD, header[1], header[2]);
 	for (count = 0; count < NUMUSERVALUES; count++) 
 	{	int vPad = PAD_MAX-(strlen(userValues[count].aUserValues));
@@ -361,10 +376,22 @@ void fDoGetUserCfgValues(void)
 					if (userValues[count].cfg_value[0] == 'y') 
 						gApplyDefSysTuning = 'y';
 				}
+				else
+					if (strcmp(userValues[count].aUserValues,"apply_bios_tuning") == 0)
+					{
+						if (userValues[count].cfg_value[0] == 'y') 
+							gApplyBiosTuning = 'y';
+					}
+					else
+						if (strcmp(userValues[count].aUserValues,"apply_nic_tuning") == 0)
+						{
+							if (userValues[count].cfg_value[0] == 'y') 
+								gApplyNicTuning = 'y';
+						}
 	}
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d seconds***\n", ctime_buf, gInterval);
+	fprintf(tunLogPtr,"\n%s %s: ***Using 'evaluation_timer' with value %d seconds***\n", ctime_buf, phase2str(current_phase), gInterval);
 	free(line); //must free
 	return;
 }
@@ -760,14 +787,109 @@ void fDoSystemTuning(void)
 
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities, please run \n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr,"%s %s: ***'sudo dmidecode' and/or 'sudo lshw'. \n\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***'sudo dmidecode' and/or 'sudo lshw'. \n", ctime_buf, phase2str(current_phase));
 
 	fprintf(tunLogPtr, "\n%s %s: ***Closing Tuning Module default system configuration file***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunDefSysCfgPtr);
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s %s: ***End of Default System Tuning***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***End of Default System Tuning***\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,"%s %s: ***----------------------------***\n\n", ctime_buf, phase2str(current_phase));
+
+	free(line);
+	return;
+}
+
+void fDoBiosTuning(void)
+{
+	char ctime_buf[27];
+	time_t clk;
+    gettime(&clk, ctime_buf);
+
+    fprintf(tunLogPtr,"\n%s %s: ***Start of Evaluate BIOS configuration***\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,"%s %s: ***------------------------------------***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"\n%s %s: ***End of Evaluate BIOS configuration***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***----------------------------------***\n\n", ctime_buf, phase2str(current_phase));
+
+	return;
+}
+
+static int rec_txqueuelen = 20000; //receommended value for now
+void fDoNicTuning(void)
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+    size_t len = 0;
+   	ssize_t nread;
+	char aNicSetting[256];
+	FILE *qlenFPtr = 0;
+	char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
+    gettime(&clk, ctime_buf);
+
+    fprintf(tunLogPtr,"\n%s %s: ***Start of Evaluate NIC configuration***\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,"%s %s: ***-----------------------------------***\n\n", ctime_buf, phase2str(current_phase));
+
+	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
+    fflush(tunLogPtr);
+
+	sprintf(aNicSetting,"cat /sys/class/net/%s/tx_queue_len > /tmp/NIC.tqlen",netDevice);
+	system(aNicSetting);
+
+	qlenFPtr = fopen("/tmp/NIC.tqlen","r");
+    if (!qlenFPtr)
+    {
+		int save_errno = errno;
+        gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.tqlen to retrieve txqueuelen value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+    }
+	//keep going...
+	else 
+		{
+			while((nread = getline(&line, &len, qlenFPtr)) != -1) {
+				char sValue[256];
+				int cfg_val = 0;
+        		//printf("Retrieved line of length %zu:\n", nread);
+        		//printf("&%s&",line);
+				strcpy(sValue,line);
+				if (sValue[strlen(sValue)-1] == '\n')
+					sValue[strlen(sValue)-1] = 0; 
+				
+				cfg_val = atoi(sValue);
+                if (cfg_val == 0) //wasn't set properly
+    			{
+					int save_errno = errno;
+        			gettime(&clk, ctime_buf);
+        			fprintf(tunLogPtr,"%s %s: Value for txqueuelen is invalid, value is %s, errno = %d...\n", ctime_buf, phase2str(current_phase), sValue, save_errno);
+    			}
+                else
+					{
+						int vPad = SETTINGS_PAD_MAX-(strlen("txqueuelen"));
+						fprintf(tunLogPtr,"%s", "txqueuelen"); //redundancy for visual
+						fprintf(tunLogPtr,"%*s", vPad, sValue);
+
+						if (rec_txqueuelen > cfg_val)
+						{
+							fprintf(tunLogPtr,"%26d %20c\n", rec_txqueuelen, gApplyNicTuning);
+							if (gApplyNicTuning == 'y')
+							{
+								//Apply Inital DefSys Tuning
+                            	sprintf(aNicSetting,"ipconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+                            	printf("%s\n",aNicSetting);
+                            	//system(aNicSetting);
+							}
+						}
+						else
+							fprintf(tunLogPtr,"%26d %20s\n", rec_txqueuelen, "na");
+					}	
+
+				//should only be one item
+				break;
+			}
+		}
+
+	fprintf(tunLogPtr,"\n%s %s: ***End of Evaluate NIC configuration***\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,"%s %s: ***----------------------------------***\n\n\n", ctime_buf, phase2str(current_phase));
 
 	free(line);
 	return;
@@ -853,6 +975,8 @@ int main(int argc, char **argv)
 	fDoGetUserCfgValues();
 
 	fDoSystemTuning();
+	fDoBiosTuning();
+	fDoNicTuning();
 
 	gettime(&clk, ctime_buf);
 	//fprintf(tunLogPtr, "%s ***Changing WorkFlow Phase***\n", ctime_buf);
