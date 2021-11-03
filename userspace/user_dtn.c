@@ -19,7 +19,7 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 
 #define WORKFLOW_NAMES_MAX	4
 
-#define TEST 1
+#define TEST 0
 static char *testNetDevice = "enp6s0np0";
 
 static void gettime(time_t *clk, char *ctime_buf) 
