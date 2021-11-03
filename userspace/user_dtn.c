@@ -19,6 +19,9 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 
 #define WORKFLOW_NAMES_MAX	4
 
+#define TEST 1
+static char *testNetDevice = "enp6s0np0";
+
 static void gettime(time_t *clk, char *ctime_buf) 
 {
     *clk = time(NULL);
@@ -576,8 +579,8 @@ void fDoSystemTuning(void)
 
     gettime(&clk, ctime_buf);
 
-	fprintf(tunLogPtr,"\n\n%s %s: ***Start of Default System Tuning***\n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr,"%s %s: ***------------------------------***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,  "%s %s: ******************Start of Default System Tuning*******************\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr, "%s %s: Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf, phase2str(current_phase));
 
     system("sh ./gdv.sh");
@@ -793,8 +796,8 @@ void fDoSystemTuning(void)
 	fclose(tunDefSysCfgPtr);
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"%s %s: ***End of Default System Tuning***\n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr,"%s %s: ***----------------------------***\n\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"\n%s %s: ********************End of Default System Tuning*******************\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
 
 	free(line);
 	return;
@@ -806,10 +809,11 @@ void fDoBiosTuning(void)
 	time_t clk;
     gettime(&clk, ctime_buf);
 
-    fprintf(tunLogPtr,"\n%s %s: ***Start of Evaluate BIOS configuration***\n", ctime_buf, phase2str(current_phase));
-    fprintf(tunLogPtr,"%s %s: ***------------------------------------***\n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr,"\n%s %s: ***End of Evaluate BIOS configuration***\n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr,"%s %s: ***----------------------------------***\n\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,"\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,  "%s %s: ***************Start of Evaluate BIOS configuration****************\n", ctime_buf, phase2str(current_phase));
+
+	fprintf(tunLogPtr,"\n%s %s: ****************End of Evaluate BIOS configuration*****************\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
 
 	return;
 }
@@ -823,30 +827,38 @@ void fDoNicTuning(void)
     size_t len = 0;
    	ssize_t nread;
 	char aNicSetting[256];
-	FILE *qlenFPtr = 0;
+	char sRXMAXValue[256];
+	char sRXCURRValue[256];
+	char sTXMAXValue[256];
+	char sTXCURRValue[256];
+	int rxcount = 0;
+	int txcount = 0;
+	int vPad;
+	FILE *nicCfgFPtr = 0;
 	char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
+
     gettime(&clk, ctime_buf);
 
-    fprintf(tunLogPtr,"\n%s %s: ***Start of Evaluate NIC configuration***\n", ctime_buf, phase2str(current_phase));
-    fprintf(tunLogPtr,"%s %s: ***-----------------------------------***\n\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,"\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,  "%s %s: ****************Start of Evaluate NIC configuration****************\n\n", ctime_buf, phase2str(current_phase));
 
 	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
     fflush(tunLogPtr);
 
-	sprintf(aNicSetting,"cat /sys/class/net/%s/tx_queue_len > /tmp/NIC.tqlen",netDevice);
+	sprintf(aNicSetting,"cat /sys/class/net/%s/tx_queue_len > /tmp/NIC.cfgfile",netDevice);
 	system(aNicSetting);
 
-	qlenFPtr = fopen("/tmp/NIC.tqlen","r");
-    if (!qlenFPtr)
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+    if (!nicCfgFPtr)
     {
 		int save_errno = errno;
         gettime(&clk, ctime_buf);
-        fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.tqlen to retrieve txqueuelen value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+        fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve txqueuelen value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
     }
 	//keep going...
 	else 
 		{
-			while((nread = getline(&line, &len, qlenFPtr)) != -1) {
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1) { //1st keyword txqueuelen
 				char sValue[256];
 				int cfg_val = 0;
         		//printf("Retrieved line of length %zu:\n", nread);
@@ -886,10 +898,191 @@ void fDoNicTuning(void)
 				//should only be one item
 				break;
 			}
+	
+
+if (TEST)                         
+	sprintf(aNicSetting,"ethtool --show-ring %s  > /tmp/NIC.cfgfile",testNetDevice);
+else
+	sprintf(aNicSetting,"ethtool --show-ring %s  > /tmp/NIC.cfgfile",netDevice);
+
+			system(aNicSetting);
+			nicCfgFPtr = freopen("/tmp/NIC.cfgfile","r", nicCfgFPtr);
+
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1) { //2nd and 3rd keywords RX and tx ring buffer size
+				int count = 0, ncount = 0;
+		
+				if (strstr(line,"RX:") && rxcount == 0)
+				{
+					rxcount++;
+
+					while (!isdigit(line[count])) count++;
+
+					while (isdigit(line[count]))
+					{
+						sRXMAXValue[ncount] = line[count];
+						ncount++;
+						count++;
+					}
+
+					sRXMAXValue[ncount] = 0;
+				}
+				else
+					if (strstr(line,"RX:"))
+					{
+						rxcount++;
+					
+						while (!isdigit(line[count])) count++;
+
+						while (isdigit(line[count]))
+						{
+							sRXCURRValue[ncount] = line[count];
+							ncount++;
+							count++;
+						}
+
+						sRXCURRValue[ncount] = 0;
+					}
+					else
+						if (strstr(line,"TX:") && txcount == 0)
+						{
+							txcount++;
+						
+							while (!isdigit(line[count])) count++;
+
+							while (isdigit(line[count]))
+							{
+								sTXMAXValue[ncount] = line[count];
+								ncount++;
+								count++;
+							}
+
+							sTXMAXValue[ncount] = 0;
+						}
+						else
+							if (strstr(line,"TX:"))
+							{
+								//should be the last thing I need
+								int cfg_max_val = 0;
+								int cfg_cur_val = 0;
+
+								txcount++;
+							
+								while (!isdigit(line[count])) count++;
+
+								while (isdigit(line[count]))
+								{
+									sTXCURRValue[ncount] = line[count];
+									ncount++;
+									count++;
+								}
+
+								sTXCURRValue[ncount] = 0;
+								
+								cfg_max_val = atoi(sRXMAXValue);
+								cfg_cur_val = atoi(sRXCURRValue);
+						
+								vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_RX"));
+								fprintf(tunLogPtr,"%s", "ring_buffer_RX"); //redundancy for visual
+								fprintf(tunLogPtr,"%*s", vPad, sRXCURRValue);
+
+								if (cfg_max_val > cfg_cur_val)
+								{
+									fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
+									if (gApplyNicTuning == 'y')
+									{
+										//Apply Inital DefSys Tuning
+                            			sprintf(aNicSetting,"ipconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+                            			printf("%s\n",aNicSetting);
+                            			//system(aNicSetting);
+									}
+								}
+								else
+									fprintf(tunLogPtr,"%26d %20s\n", cfg_max_val, "na");
+								
+								cfg_max_val = atoi(sTXMAXValue);
+								cfg_cur_val = atoi(sTXCURRValue);
+
+								vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_TX"));
+								fprintf(tunLogPtr,"%s", "ring_buffer_TX"); //redundancy for visual
+								fprintf(tunLogPtr,"%*s", vPad, sTXCURRValue);
+
+								if (cfg_max_val > cfg_cur_val)
+								{
+									fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
+									if (gApplyNicTuning == 'y')
+									{
+										//Apply Inital DefSys Tuning
+                            			sprintf(aNicSetting,"ipconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+                            			printf("%s\n",aNicSetting);
+                            			//system(aNicSetting);
+									}
+								}
+								else
+									fprintf(tunLogPtr,"%26d %20s\n", cfg_max_val, "na");
+
+								//should be the last thing I need
+								break;
+							}	
+							else
+								continue;	
+			}
+			
+if (TEST)                         
+	sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload > /tmp/NIC.cfgfile",testNetDevice);
+else
+	sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload > /tmp/NIC.cfgfile",netDevice);
+
+			system(aNicSetting);
+			nicCfgFPtr = freopen("/tmp/NIC.cfgfile","r", nicCfgFPtr);
+
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1) { //4th keyword: RX and tx ring buffer size
+				int count = 0, ncount = 0;
+				char *q;
+				char sLROValue[256];
+				char * recommended_val = "on";
+
+				q = line + strlen("large-receive-offload");
+				strcpy(sLROValue,q);
+
+				while (!isalpha(q[count])) count++;
+
+				while (isalpha(q[count]))
+				{
+					sLROValue[ncount] = q[count];
+					ncount++;
+					count++;
+				}
+
+				sLROValue[ncount] = 0;
+
+				vPad = SETTINGS_PAD_MAX-(strlen("large-receive-offload"));
+				fprintf(tunLogPtr,"%s", "large-receive-offload"); //redundancy for visual
+				fprintf(tunLogPtr,"%*s", vPad, sLROValue);
+
+				if (strcmp(recommended_val, sLROValue) != 0)
+				{
+					fprintf(tunLogPtr,"%26s %20c\n", recommended_val, gApplyNicTuning);
+					if (gApplyNicTuning == 'y')
+					{
+						//Apply Inital DefSys Tuning
+                   		sprintf(aNicSetting,"ipconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+                   		printf("%s\n",aNicSetting);
+                   		//system(aNicSetting);
+					}
+				}
+				else
+					fprintf(tunLogPtr,"%26s %20s\n", recommended_val, "na");
+								
+				//should be only one line in the file
+				break;
+			}	
+
+			fclose(nicCfgFPtr);	
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
 		}
 
-	fprintf(tunLogPtr,"\n%s %s: ***End of Evaluate NIC configuration***\n", ctime_buf, phase2str(current_phase));
-    fprintf(tunLogPtr,"%s %s: ***----------------------------------***\n\n\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"\n%s %s: *****************End of Evaluate NIC configuration*****************\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n\n", ctime_buf, phase2str(current_phase));
 
 	free(line);
 	return;
