@@ -19,7 +19,7 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 
 #define WORKFLOW_NAMES_MAX	4
 
-#define TEST 1
+#define TEST 0
 static char *testNetDevice = "enp6s0np0";
 
 static void gettime(time_t *clk, char *ctime_buf) 
@@ -886,7 +886,7 @@ void fDoNicTuning(void)
 							if (gApplyNicTuning == 'y')
 							{
 								//Apply Inital DefSys Tuning
-                            	sprintf(aNicSetting,"ipconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+                            	sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
                             	printf("%s\n",aNicSetting);
                             	//system(aNicSetting);
 							}
@@ -991,7 +991,7 @@ else
 									if (gApplyNicTuning == 'y')
 									{
 										//Apply Inital DefSys Tuning
-                            			sprintf(aNicSetting,"ipconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+                            			sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
                             			printf("%s\n",aNicSetting);
                             			//system(aNicSetting);
 									}
@@ -1012,7 +1012,7 @@ else
 									if (gApplyNicTuning == 'y')
 									{
 										//Apply Inital DefSys Tuning
-                            			sprintf(aNicSetting,"ipconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+                            			sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
                             			printf("%s\n",aNicSetting);
                             			//system(aNicSetting);
 									}
@@ -1065,7 +1065,7 @@ else
 					if (gApplyNicTuning == 'y')
 					{
 						//Apply Inital DefSys Tuning
-                   		sprintf(aNicSetting,"ipconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+                   		sprintf(aNicSetting,"ethtool -K %s lro %s", netDevice, recommended_val);
                    		printf("%s\n",aNicSetting);
                    		//system(aNicSetting);
 					}
