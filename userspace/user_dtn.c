@@ -19,7 +19,7 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 
 #define WORKFLOW_NAMES_MAX	4
 
-#define TEST 0
+#define TEST 1
 static char *testNetDevice = "enp6s0np0";
 
 static void gettime(time_t *clk, char *ctime_buf) 
@@ -809,11 +809,81 @@ void fDoBiosTuning(void)
 {
 	char ctime_buf[27];
 	time_t clk;
+	char *line = NULL;
+    size_t len = 0;
+    ssize_t nread;
+    char aBiosSetting[256];
+	char sCPUMAXValue[256];
+	char sCPUCURRValue[256];
+    int vPad;
+    FILE *biosCfgFPtr = 0;
+    char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
+
     gettime(&clk, ctime_buf);
 
     fprintf(tunLogPtr,"\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
-    fprintf(tunLogPtr,  "%s %s: ***************Start of Evaluate BIOS configuration****************\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,  "%s %s: ***************Start of Evaluate BIOS configuration****************\n\n", ctime_buf, phase2str(current_phase));
 	
+	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
+    fflush(tunLogPtr);
+
+	sprintf(aBiosSetting,"lscpu | grep -E '^CPU MHz|^CPU max MHz' > /tmp/BIOS.cfgfile");
+	system(aBiosSetting);
+
+	biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
+    if (!biosCfgFPtr)
+    {
+		int save_errno = errno;
+        gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: Could not open file /tmp/BIOS.cfgfile to work out CPU speed, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+    }
+	else
+		{
+			int cfg_max_val = 0;
+			int cfg_cur_val = 0;
+
+			while((nread = getline(&line, &len, biosCfgFPtr)) != -1) { //getting CPU speed
+				int count = 0, ncount = 0;
+        		printf("Retrieved line of length %zu:\n", nread);
+        		printf("*%s*",line);
+		
+				if (strstr(line,"CPU MHz:"))
+				{
+					char *q = line + strlen("CPU MHz:");
+
+					while (!isdigit(q[count])) count++;
+
+					while (isdigit(q[count]) || q[count] == '.')
+					{
+						sCPUCURRValue[ncount] = q[count];
+						ncount++;
+						count++;
+					}
+
+					sCPUCURRValue[ncount] = 0;
+				}
+				else
+					if (strstr(line,"CPU max MHz:"))
+					{
+						char *q = line + strlen("CPU max MHz:");
+					
+						while (!isdigit(q[count])) count++;
+
+						while (isdigit(q[count]) || q[count] == '.')
+						{
+							sCPUMAXValue[ncount] = q[count];
+							ncount++;
+							count++;
+						}
+
+						sCPUMAXValue[ncount] = 0;
+					}
+			}
+		
+			fclose(biosCfgFPtr);
+		}
+
+
 	/* find additional things that could be tuned */
 	fDo_lshw();
 
@@ -823,6 +893,9 @@ void fDoBiosTuning(void)
 
 	fprintf(tunLogPtr,"\n%s %s: ****************End of Evaluate BIOS configuration*****************\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
+
+	if (line)
+		free(line);
 
 	return;
 }
@@ -864,7 +937,6 @@ void fDoNicTuning(void)
         gettime(&clk, ctime_buf);
         fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve txqueuelen value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
     }
-	//keep going...
 	else 
 		{
 			while((nread = getline(&line, &len, nicCfgFPtr)) != -1) { //1st keyword txqueuelen
@@ -1093,7 +1165,9 @@ else
 	fprintf(tunLogPtr,"\n%s %s: *****************End of Evaluate NIC configuration*****************\n", ctime_buf, phase2str(current_phase));
     fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
 
-	free(line);
+	if (line)
+		free(line);
+
 	return;
 }
 
