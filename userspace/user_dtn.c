@@ -19,7 +19,7 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 
 #define WORKFLOW_NAMES_MAX	4
 
-#define TEST 0
+#define TEST 1
 static char *testNetDevice = "enp6s0np0";
 
 static void gettime(time_t *clk, char *ctime_buf) 
@@ -394,7 +394,7 @@ void fDoGetUserCfgValues(void)
 	}
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s %s: ***Using 'evaluation_timer' with value %d seconds***\n", ctime_buf, phase2str(current_phase), gInterval);
+	fprintf(tunLogPtr,"\n%s %s: ***Note: Using 'evaluation_timer' with value %d seconds***\n", ctime_buf, phase2str(current_phase), gInterval);
 	free(line); //must free
 	return;
 }
@@ -579,7 +579,7 @@ void fDoSystemTuning(void)
 
     gettime(&clk, ctime_buf);
 
-	fprintf(tunLogPtr,"\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"\n\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,  "%s %s: ******************Start of Default System Tuning*******************\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr, "%s %s: Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf, phase2str(current_phase));
 
@@ -785,18 +785,20 @@ void fDoSystemTuning(void)
 		
 	}
 
+#if 0
 	/* find additional things that could be tuned */
 	fDo_lshw();
 
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities, please run \n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,"%s %s: ***'sudo dmidecode' and/or 'sudo lshw'. \n", ctime_buf, phase2str(current_phase));
+#endif
 
 	fprintf(tunLogPtr, "\n%s %s: ***Closing Tuning Module default system configuration file***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunDefSysCfgPtr);
 
     gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s %s: ********************End of Default System Tuning*******************\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,  "%s %s: ********************End of Default System Tuning*******************\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
 
 	free(line);
@@ -811,6 +813,13 @@ void fDoBiosTuning(void)
 
     fprintf(tunLogPtr,"\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
     fprintf(tunLogPtr,  "%s %s: ***************Start of Evaluate BIOS configuration****************\n", ctime_buf, phase2str(current_phase));
+	
+	/* find additional things that could be tuned */
+	fDo_lshw();
+
+    gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities, please run \n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***'sudo dmidecode' and/or 'sudo lshw'. \n", ctime_buf, phase2str(current_phase));
 
 	fprintf(tunLogPtr,"\n%s %s: ****************End of Evaluate BIOS configuration*****************\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
@@ -1082,7 +1091,7 @@ else
 		}
 
 	fprintf(tunLogPtr,"\n%s %s: *****************End of Evaluate NIC configuration*****************\n", ctime_buf, phase2str(current_phase));
-    fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n\n", ctime_buf, phase2str(current_phase));
+    fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
 
 	free(line);
 	return;
@@ -1168,8 +1177,8 @@ int main(int argc, char **argv)
 	fDoGetUserCfgValues();
 
 	fDoSystemTuning();
-	fDoBiosTuning();
 	fDoNicTuning();
+	fDoBiosTuning();
 
 	gettime(&clk, ctime_buf);
 	//fprintf(tunLogPtr, "%s ***Changing WorkFlow Phase***\n", ctime_buf);
