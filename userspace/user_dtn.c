@@ -839,13 +839,11 @@ void fDoBiosTuning(void)
     }
 	else
 		{
-			int cfg_max_val = 0;
-			int cfg_cur_val = 0;
+			double cfg_max_val = 0.0;
+			double cfg_cur_val = 0.0;
 
 			while((nread = getline(&line, &len, biosCfgFPtr)) != -1) { //getting CPU speed
 				int count = 0, ncount = 0;
-        		printf("Retrieved line of length %zu:\n", nread);
-        		printf("*%s*",line);
 		
 				if (strstr(line,"CPU MHz:"))
 				{
@@ -879,10 +877,30 @@ void fDoBiosTuning(void)
 						sCPUMAXValue[ncount] = 0;
 					}
 			}
-		
+	                    
+			cfg_max_val = atof(sCPUMAXValue);
+    	    cfg_cur_val = atof(sCPUCURRValue);
+
+       		vPad = SETTINGS_PAD_MAX-(strlen("CPU MHz"));
+            fprintf(tunLogPtr,"%s", "CPU MHz"); //redundancy for visual
+            fprintf(tunLogPtr,"%*s", vPad, sCPUCURRValue);
+
+            if (cfg_max_val > cfg_cur_val)
+            {
+            	fprintf(tunLogPtr,"%26s %20c\n", sCPUMAXValue, gApplyBiosTuning); //could use %26.4f, cfg_max_val instead
+                if (gApplyBiosTuning == 'y')
+                {
+                  	//Apply Bios Tuning
+                   	sprintf(aBiosSetting,"cpupower frequency-set --governor performance");
+                    printf("%s\n",aBiosSetting);
+                    //system(aBiosSetting);
+                }
+             }
+             else
+               	fprintf(tunLogPtr,"%26s %20s\n", sCPUMAXValue, "na");
+
 			fclose(biosCfgFPtr);
 		}
-
 
 	/* find additional things that could be tuned */
 	fDo_lshw();
