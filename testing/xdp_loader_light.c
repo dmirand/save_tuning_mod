@@ -2,27 +2,18 @@
 static const char *__doc__ = "XDP loader\n"
 	" - Allows selecting BPF section --progsec name to XDP-attach to --dev\n";
 
-#include <stdio.h>
-//#include <stdlib.h>
-#include <string.h>
-//#include <errno.h>
-#include <getopt.h>
-
-#include <locale.h>
 #include <unistd.h>
-#include <time.h>
 
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
 
-#include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
 
 #include "../common/common_params.h"
 #include "../common/common_user_bpf_xdp.h"
 #include "../common/common_libbpf.h"
 
-static const char *default_filename = "xdp_prog_kern.o";
+static const char *default_filename = "xdp_prog_kern_light.o";
 
 static const struct option_wrapper long_options[] = {
 
@@ -68,8 +59,6 @@ static const struct option_wrapper long_options[] = {
 
 const char *pin_basedir =  "/sys/fs/bpf";
 const char *map_name    =  "int_ring_buffer";
-//const char *map_name    =  "xdp_test_map";
-//const char *map_name    =  "xdp_stats_map";
 
 /* Pinning maps under /sys/fs/bpf in subdir */
 int pin_maps_in_bpf_object(struct bpf_object *bpf_obj, const char *subdir)

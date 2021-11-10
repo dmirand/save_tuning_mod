@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 //#include <linux/bpf.h>
 
-#include <string.h>
+//#include <string.h>
 #include "/usr/include/linux/bpf.h"
 #include <bpf/bpf_helpers.h>
+
 
 #include "../userspace/common_kern_user.h" /* defines: struct datarec; */
 
@@ -133,19 +134,21 @@ int  xdp_test_ringbuf_func(struct xdp_md *ctx)
 	__u32 action = XDP_PASS;
 
 	//int count2 = 3;
-	struct event *ev = bpf_ringbuf_reserve(&int_ring_buffer, sizeof(struct event), 0);
+	struct int_telemetry *ev = bpf_ringbuf_reserve(&int_ring_buffer, sizeof(struct int_telemetry), 0);
   
 	if (!ev) {
 		bpf_printk("xdp_test_ringbuf: Could not reserve event, count = %llu\n",count);
    		return action;
   }
 
-  ev->numb1 = count;
-  ev->numb2 = count + 99;
-  ev->numb3 = count + 88;
-  ev->numb4 = count + 77;
-  ev->numb5 = count + 66;
-  ev->numb6 = count + 55;
+  ev->switch_id = count+3;
+  ev->egress_port_id = (count + 2)/2;
+  ev->ingress_port_id = (count + 5)/2;
+  ev->unknown = count + 77;
+  ev->queue_id = count;
+  ev->queue_occupancy = count + 155;
+  ev->ingress_time = count * 77;
+  ev->egress_time = count * 88;
   //strcpy(ev->filename, "MetaData from Collector Module");
 
   bpf_ringbuf_submit(ev, 0);

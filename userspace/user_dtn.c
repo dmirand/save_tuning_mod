@@ -18,7 +18,7 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 #include <signal.h>
 
 #define WORKFLOW_NAMES_MAX	4
-
+#define USING_PERF_EVENT_ARRAY 1
 #define TEST 1
 static char *testNetDevice = "enp6s0np0";
 
@@ -135,24 +135,65 @@ const char *pin_basedir =  "/sys/fs/bpf";
 #include "common_kern_user.h"
 #include "bpf_util.h" /* bpf_num_possible_cpus */
 
+#ifdef USING_PERF_EVENT_ARRAY
+void read_buffer_sample_perf(void *ctx, int cpu, void *data, unsigned int len) 
+{
+	time_t clk;
+	char ctime_buf[27];
+	struct int_telemetry *evt = (struct int_telemetry *)data;
+	int	 do_something;
+
+	gettime(&clk, ctime_buf);
+  	fprintf(tunLogPtr,"%s %s: %s::: \n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module:");
+  	fprintf(tunLogPtr,"%s %s: ::: switch %d egress port %d ingress port %d ingress time %d egress time %d queue id %d queue_occupancy %d\n", ctime_buf, phase2str(current_phase), evt->switch_id, evt->egress_port_id, evt->ingress_port_id, evt->ingress_time, evt->egress_time, evt->queue_id, evt->queue_occupancy);
+
+	//Process network state received from Collector
+	//Make suggestions and or apply if authorized by the DTN operator
+	//
+	//Also, look at INT Queue Occupancy and Hop Delay to estimate 
+	//bottlenecks in the path. Tuning will be suggested based on these
+	//premises. 
+	//
+	if (gTuningMode)
+	{
+			//DTN operator has authorized the app to apply the suggestions.
+			//make it so. 
+			//
+			do_something = 1;
+	}
+
+	return;
+}
+#else
 static int read_buffer_sample(void *ctx, void *data, size_t len) 
 {
 	time_t clk;
 	char ctime_buf[27];
-	struct event *evt = (struct event *)data;
+	struct int_telemetry *evt = (struct int_telemetry *)data;
 	int	 do_something;
 
 	gettime(&clk, ctime_buf);
-  	fprintf(tunLogPtr,"%s %s: %s::: %lld %lld %lld %lld %lld %lld\n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module", evt->numb1, evt->numb2,evt->numb3,evt->numb4,evt->numb5,evt->numb6);
+  	fprintf(tunLogPtr,"%s %s: %s::: \n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module:");
+  	fprintf(tunLogPtr,"%s %s: ::: switch %d egress port %d ingress port %d ingress time %d egress time %d queue id %d queue_occupancy %d\n", ctime_buf, phase2str(current_phase), evt->switch_id, evt->egress_port_id, evt->ingress_port_id, evt->ingress_time, evt->egress_time, evt->queue_id, evt->queue_occupancy);
 
+	//Process network state received from Collector
+	//Make suggestions and or apply if authorized by the DTN operator
+	//
+	//Also, look at INT Queue Occupancy and Hop Delay to estimate 
+	//bottlenecks in the path. Tuning will be suggested based on these
+	//premises. 
+	//
 	if (gTuningMode)
 	{
-  	//	fprintf(tunLogPtr,"%s %s: %s::: %lld %lld %lld %lld %lld %lld\n", ctime_buf, phase2str(current_phase), "MetaData from Collector Module", evt->numb1, evt->numb2,evt->numb3,evt->numb4,evt->numb5,evt->numb6);
-		do_something = 1;
+			//DTN operator has authorized the app to apply the suggestions.
+			//make it so. 
+			//
+			do_something = 1;
 	}
 
 	return 0;
 }
+#endif
 
 static const struct option_wrapper long_options[] = {
     {{"help",        no_argument,       NULL, 'h' },
@@ -172,7 +213,95 @@ typedef struct {
 		char ** argv;
 } sArgv_t;
 
-void * fDoRunBpfCollection(void * vargp) 
+#ifdef USING_PERF_EVENT_ARRAY
+void * fDoRunBpfCollectionPerfEventArray(void * vargp) 
+{
+
+    struct bpf_map_info info = { 0 };
+    char pin_dir[PATH_MAX];
+    int buffer_map_fd;
+    struct perf_buffer *pb = NULL;
+	struct perf_buffer_opts pb_opts = {};
+    int len, err;
+    time_t clk;
+    char ctime_buf[27];
+
+    struct config cfg = {
+        .ifindex   = -1,
+        .do_unload = false,
+    };
+
+	sArgv_t * sArgv = (sArgv_t * ) vargp;
+
+    /* Cmdline options can change progsec */
+    parse_cmdline_args(sArgv->argc, sArgv->argv, long_options, &cfg, __doc__);
+
+	/* Required option */
+    if (cfg.ifindex == -1) {
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: ERR: required option --dev missing\n\n", ctime_buf, phase2str(current_phase));
+        usage(sArgv->argv[0], __doc__, long_options, (sArgv->argc == 1));
+		fflush(tunLogPtr);
+		return (void *)1;
+        //return EXIT_FAIL_OPTION;
+    }
+
+	/* Use the --dev name as subdir for finding pinned maps */
+    len = snprintf(pin_dir, PATH_MAX, "%s/%s", pin_basedir, cfg.ifname);
+    if (len < 0) {
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: ERR: creating pin dirname\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
+		return (void *)2;
+        //return EXIT_FAIL_OPTION;
+    }
+
+	buffer_map_fd = open_bpf_map_file(pin_dir, "int_ring_buffer", &info);
+    if (buffer_map_fd < 0) {
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"%s %s: ERR: fail to get buffer map fd\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
+		return (void *)3;
+        //return EXIT_FAIL_BPF;
+    }
+
+    if (verbose) {
+    	gettime(&clk, ctime_buf);
+        fprintf(tunLogPtr,"\n%s %s: Collecting stats from BPF map\n", ctime_buf, phase2str(current_phase));
+        fprintf(tunLogPtr,"%s %s: - BPF map (bpf_map_type:%d) id:%d name:%s"
+               " max_entries:%d\n", ctime_buf, phase2str(current_phase),
+               info.type, info.id, info.name, info.max_entries
+               );
+    }
+
+	pb_opts.sample_cb = read_buffer_sample_perf;
+	pb = perf_buffer__new(buffer_map_fd, 4 /* 16KB per CPU */, &pb_opts);
+	if (libbpf_get_error(pb)) {
+		err = -1;
+    	gettime(&clk, ctime_buf);
+	    fprintf (tunLogPtr,"%s %s: can't create ring buffer struct****\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
+		goto cleanup;
+	}
+
+
+    gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s %s: Starting communication with Collector Module...***\n", ctime_buf, phase2str(current_phase));
+
+	if (gTuningMode) 
+		current_phase = TUNING;
+
+	while (1) {
+			err = perf_buffer__poll(pb, 100 /* timeout, ms */);
+			//sleep(gInterval);
+	}
+
+cleanup:
+	perf_buffer__free(pb);
+	return (void *)7;
+}
+#else
+void * fDoRunBpfCollectionRingBuf(void * vargp) 
 {
 
     struct bpf_map_info map_expect = { 0 };
@@ -224,7 +353,7 @@ void * fDoRunBpfCollection(void * vargp)
     }
 
     /* check map info, e.g. datarec is expected size */
-    map_expect.max_entries = 1 << 14;
+    map_expect.max_entries = 16384;
     err = check_map_fd_info(&info, &map_expect);
     if (err) {
     	gettime(&clk, ctime_buf);
@@ -265,7 +394,7 @@ void * fDoRunBpfCollection(void * vargp)
     	
 	return (void *)7;
 }
-
+#endif
 
 /* End of bpf stuff ****/
 
@@ -1295,8 +1424,11 @@ int main(int argc, char **argv)
 			
 	fflush(tunLogPtr);
 
-	vRetFromRunBpfThread = pthread_create(&doRunBpfCollectionThread_id, NULL, fDoRunBpfCollection, &sArgv);;
-
+#ifdef USING_PERF_EVENT_ARRAY
+		vRetFromRunBpfThread = pthread_create(&doRunBpfCollectionThread_id, NULL, fDoRunBpfCollectionPerfEventArray, &sArgv);
+#else //Using Map Type RINGBUF
+		vRetFromRunBpfThread = pthread_create(&doRunBpfCollectionThread_id, NULL, fDoRunBpfCollectionRingBuf, &sArgv);;
+#endif
 	if (vRetFromKernelThread == 0)
     	vRetFromKernelJoin = pthread_join(talkToKernelThread_id, NULL);
 
