@@ -1,0 +1,19 @@
+#!/bin/sh
+#
+# dtnmenu - scripts launched for dtntune to provide a menu of 
+# routine administrative tasks
+#
+
+# when viewing this script, set tabstops to 4
+
+# main execution thread
+    if [ `id -u` = 0 ]
+    then
+		sh dtn_menu.sh
+	else
+        printf '\n***%s\n' "You must be superuser to run dtnmenu..."
+        printf '***%s\n\n' "Exiting..."
+        exit 1
+    fi
+exit 0
+
