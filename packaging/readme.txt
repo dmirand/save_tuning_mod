@@ -4,6 +4,8 @@
 dtntune is use to tune the Linux host for networking purposes.
 Please type "sudo ./dtnmenu" and follow instructions to tune system
 
+Note: This package requires 'lshw' and 'dmidecode' utilities tools
+      to be installed on the system
 
 Additional Notes:
 There are 3 files that are used in conjunction with the Tuning Module: 

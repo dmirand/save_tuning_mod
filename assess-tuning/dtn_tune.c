@@ -10,6 +10,7 @@
 #include <time.h>
 #define WORKFLOW_NAMES_MAX	4
 
+
 static void gettime(time_t *clk, char *ctime_buf) 
 {
     *clk = time(NULL);
@@ -397,8 +398,8 @@ void fDoSystemTuning(void)
 							{
 								//Apply Inital DefSys Tuning
 								sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
-								printf("%s\n",aApplyDefTun);	
-								//system(aApplyDefTun);
+								//printf("%s\n",aApplyDefTun);	
+								system(aApplyDefTun);
 							}
 						}
 						else
@@ -459,9 +460,9 @@ void fDoSystemTuning(void)
 									if (gApplyDefSysTuning == 'y')
 									{
 										//Apply Inital DefSys Tuning
-										sprintf(aApplyDefTun,"sysctl -w %s=%s %s %s",setting, strValmin, strValdef, strValmax);
-										printf("%s\n",aApplyDefTun);	
-										//system(aApplyDefTun);
+										sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\"",setting, strValmin, strValdef, strValmax);
+										//printf("%s\n",aApplyDefTun);	
+										system(aApplyDefTun);
 									}
 								}
 								
@@ -485,8 +486,8 @@ void fDoSystemTuning(void)
 							{
 								//Apply Inital DefSys Tuning
 								sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
-								printf("%s\n",aApplyDefTun);	
-								//system(aApplyDefTun);
+								//printf("%s\n",aApplyDefTun);	
+								system(aApplyDefTun);
 							}
 						}
 						else
@@ -497,8 +498,8 @@ void fDoSystemTuning(void)
 									//Apply Inital Def
 									//No need to apply - already set...
 									sprintf(aApplyDefTun,"no need to apply for %s=%s since already set...",setting, aStringval[aTuningNumsToUse[count].minimum]);
-									printf("%s\n",aApplyDefTun);	
-									//system(aApplyDefTun);
+									//printf("%s\n",aApplyDefTun);	
+									system(aApplyDefTun);
 								}
 							}
 							
