@@ -730,7 +730,8 @@ void fDoSystemTuning(void)
 
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: Tuning Module default current configuration file, '%s', opened***\n", ctime_buf, phase2str(current_phase), pFileCurrentConfigSettings);
-	fprintf(tunLogPtr, "%s %s: ***NOTE - Some settings have a minimum, default and maximum values, while others only have a single value***\n\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr, "%s %s: ***NOTE - Some settings have a minimum, default and maximum values, while others only have a single value***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr, "%s %s: ***NOTE - If the recommended value is less than the current value, no changes will be made for that setting***\n\n", ctime_buf, phase2str(current_phase));
 
 #define SETTINGS_PAD_MAX 58
 #define HEADER_SETTINGS_PAD  50
@@ -794,7 +795,7 @@ void fDoSystemTuning(void)
 								//fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
 								//fprintf(tunLogPtr,"You should change to the recommended setting of *%s* to *%d\t%d\t%d*.\n",setting, aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum);
 								//Let's parse the value stringand get the min, etc. separaately
-								int i, j;
+								int i, j, currmax;
 								char min[256];
 								char def[256];
 								char max[256];
@@ -832,6 +833,7 @@ void fDoSystemTuning(void)
 #define SETTINGS_PAD_MAX2 43
 								vPad = SETTINGS_PAD_MAX2-(strlen(min) + strlen(def) + strlen(max));
 								fprintf(tunLogPtr,"%*s %s %s", vPad, min, def, max);	
+								currmax = atoi(max);
 #define SETTINGS_PAD_MAX3 28
 								{
 									char strValmin[128];
@@ -846,19 +848,90 @@ void fDoSystemTuning(void)
 									total += y;
 									vPad = SETTINGS_PAD_MAX3-total;
 									//fprintf(tunLogPtr,"%11d %d %d %20c y = %d\n", aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum, gApplyDefSysTuning,total);
-									fprintf(tunLogPtr,"%*s %s %s %20c\n", vPad, strValmin, strValdef, strValmax, gApplyDefSysTuning);
-									if (gApplyDefSysTuning == 'y')
-									{
-										//Apply Inital DefSys Tuning
-										sprintf(aApplyDefTun,"sysctl -w %s=%s %s %s",setting, strValmin, strValdef, strValmax);
-										printf("%s\n",aApplyDefTun);	
-										//system(aApplyDefTun);
+									if (aTuningNumsToUse[count].maximum > currmax)
+                                    {
+										fprintf(tunLogPtr,"%*s %s %s %20c\n", vPad, strValmin, strValdef, strValmax, gApplyDefSysTuning);
+										if (gApplyDefSysTuning == 'y')
+										{
+											//Apply Inital DefSys Tuning
+											sprintf(aApplyDefTun,"sysctl -w %s=%s %s %s",setting, strValmin, strValdef, strValmax);
+											printf("%s\n",aApplyDefTun);	
+											//system(aApplyDefTun);
+										}
+									}
+									else
+                                        fprintf(tunLogPtr,"%*s %s %s %20s\n", vPad, strValmin, strValdef, strValmax, "na");
+                                }
+                            }
+                    }
+                    else
+                        { //intvalue > aTuningNumsToUse[count].minimum
+                            if (aTuningNumsToUse[count].xDefault == -1) //only one value
+                            {
+                                //DAMMM
+                                fprintf(tunLogPtr,"%*s", vPad, value);
+                                fprintf(tunLogPtr,"%26d %20s\n",aTuningNumsToUse[count].minimum, "na");
+                            }
+                            else
+                                {//has min, default and max values - get them...
+                                //Let's parse the value stringand get the min, etc. separately
+                                    int i, j;
+                                    char min[256];
+                                    char def[256];
+                                    char max[256];
+                                    memset(min,0,256);
+                                    memset(def,0,256);
+                                    memset(max,0,256);
+                                    i = 0;
+                                    while (isdigit(value[i]))
+                                    {
+                                        min[i] = value[i];
+                                        i++;
+                                    }
+									
+									while(!isdigit(value[i]))
+                                        i++;
+
+                                    j = 0;
+                                    while (isdigit(value[i]))
+                                    {
+                                        def[j] = value[i];
+                                        i++;
+                                        j++;
+                                    }
+
+                                    while(!isdigit(value[i]))
+                                        i++;
+
+                                    j = 0;
+                                    while (isdigit(value[i]))
+                                    {
+                                        max[j] = value[i];
+                                        i++;
+                                        j++;
+							}
+#define SETTINGS_PAD_MAX2 43
+                                    vPad = SETTINGS_PAD_MAX2-(strlen(min) + strlen(def) + strlen(max));
+                                    fprintf(tunLogPtr,"%*s %s %s", vPad, min, def, max);
+#define SETTINGS_PAD_MAX3 28
+                                    {
+                                        char strValmin[128];
+                                        char strValdef[128];
+                                        char strValmax[128];
+                                        int total;
+                                        int y = sprintf(strValmin,"%d",aTuningNumsToUse[count].minimum);
+                                        total = y;
+                                        y = sprintf(strValdef,"%d",aTuningNumsToUse[count].xDefault);
+                                        total += y;
+                                        y = sprintf(strValmax,"%d",aTuningNumsToUse[count].maximum);
+                                        total += y;
+                                        vPad = SETTINGS_PAD_MAX3-total;
+
+                                        fprintf(tunLogPtr,"%*s %s %s %20s\n", vPad, strValmin, strValdef, strValmax, "na");
 									}
 								}
-							//	printf("*value = *%s*, min=***%s***, def=***%s***, max=***%s***\n", value, min, def, max);	
-								
-							}
 					}
+#if 0
 					else //Leaving out this case for now
 						if (strcmp(aTuningNumsToUse[count].setting, "MTU") == 0) //special case - will have to fix up - not using currently
 						{
@@ -866,6 +939,7 @@ void fDoSystemTuning(void)
 							//fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
 							fprintf(tunLogPtr,"%*s%26s %20c\n",vPad, value, "-", '-');	
 						}
+#endif
 					
 				}	
 				else
@@ -889,6 +963,7 @@ void fDoSystemTuning(void)
 								//fprintf(tunLogPtr,"Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
 								//fprintf(tunLogPtr,"%*s %25s %20c\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], gApplyDefSysTuning);	
 								fprintf(tunLogPtr,"%*s %25s %20s\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], "na");	
+#if 0
 								if (gApplyDefSysTuning == 'y')
 								{
 									//Apply Inital Def
@@ -897,6 +972,7 @@ void fDoSystemTuning(void)
 									printf("%s\n",aApplyDefTun);	
 									//system(aApplyDefTun);
 								}
+#endif
 							}
 							
 					}
