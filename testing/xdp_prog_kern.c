@@ -55,12 +55,14 @@ struct {
  * instruction (that is BPF_STX | BPF_XADD | BPF_W for word sizes)
  */
 
+#if 0
 #define bpf_printk(fmt, ...)                                    \
 ({                                                              \
         char ____fmt[] = fmt;                                   \
         bpf_trace_printk(____fmt, sizeof(____fmt),              \
                          ##__VA_ARGS__);                        \
 })
+#endif
 
 #ifndef lock_xadd
 #define lock_xadd(ptr, val)	((void) __sync_fetch_and_add(ptr, val))
