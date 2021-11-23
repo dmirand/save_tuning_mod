@@ -6,7 +6,7 @@ XDP_TARGETS  += xdp_prog_kern_light
 USER_TARGETS := xdp_loader
 USER_TARGETS += xdp_loader_light
 
-LIBBPF_DIR = ../../libbpf/src/
+LIBBPF_DIR = ../libbpf/src/
 COMMON_DIR = ../common/
 
 include $(COMMON_DIR)/common.mk

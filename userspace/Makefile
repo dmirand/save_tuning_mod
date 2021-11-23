@@ -3,7 +3,7 @@
 USER_TARGETS := user_dtn
 USER_TARGETS += test_dtn
 
-LIBBPF_DIR = ../../libbpf/src/
+LIBBPF_DIR = ../libbpf/src/
 COMMON_DIR = ../common/
 
 # Extend with another COMMON_OBJS

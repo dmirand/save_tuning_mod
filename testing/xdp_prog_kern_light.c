@@ -24,12 +24,14 @@ struct {
  * instruction (that is BPF_STX | BPF_XADD | BPF_W for word sizes)
  */
 
+#if 0
 #define bpf_printk(fmt, ...)                                    \
 ({                                                              \
         char ____fmt[] = fmt;                                   \
         bpf_trace_printk(____fmt, sizeof(____fmt),              \
                          ##__VA_ARGS__);                        \
 })
+#endif
 
 SEC("xdp_test_ringbuf")
 int  xdp_test_ringbuf_func(struct xdp_md *ctx)
