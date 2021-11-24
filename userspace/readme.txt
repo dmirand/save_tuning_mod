@@ -16,14 +16,41 @@ iii. /tmp/tuningLog
 user_config.txt 
 ===============
 In the user_config.txt, the operator can use certain well known values to 
-control how the Tuning Module operates.  So far, there is only one parameter 
-that can be used.  The following is an explanation for it: 
+control how the Tuning Module operates.  So far, there are four parameters 
+that can be used.  The following is an explanation for each one: 
 
-a. apply_default_system_tuning 
+a. evaluation timer  
+The evaluation time parameter is the time that the tuning module will wait 
+before reevalualting new metadata from the Collector  Module. It is measured 
+in seconds and has a default value of 2.  
+ 
+b. learning_mode_only 
+The learning_mode_only parameter is used to tell the Tuning Module if it should 
+apply tuning recommendations or not. The default value is “y” which means that 
+it should not apply tunning recommendations. A value of “n” means that it 
+should apply tuning recommendations. 
+
+c. API_listen_port 
+The API_listen_port parameter is used to allow a user to send CLI requests to 
+the Tuning Module. The default value (currently arbitrary) is 5523. 
+
+d. apply_default_system_tuning 
 The apply_default_system_tuning parameter is used to tell the Tuning Module if 
 it should apply the initial tuning recommendations during the ASSESSMENT phase 
 or not. The default value is “n” which means it should not apply the initial
 tuning recommendations.                  
+
+e. apply_bios_tuning
+The apply_bios_tuning parameter is use to tell the Tuning Module if after 
+evaluating the BIOS configuration, it should apply the recommendations
+itself or not. The default is "n" which means it should make the 
+recommendations to the DTN operator, but not apply them itself.
+
+f. apply_nic_tuning
+The apply_nic_tuning parameter is use to tell the Tuning Module if after 
+evaluating the NIC configuration, it should apply the recommendations
+itself or not. The default is "n" which means it should make the 
+recommendations to the DTN operator, but not apply them itself.
 
 
 gdv.sh 

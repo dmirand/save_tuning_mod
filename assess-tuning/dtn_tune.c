@@ -129,6 +129,7 @@ void fDoGetUserCfgValues(void)
 #define CONST_PAD	12
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: Final user config values after using settings from %s:\n",ctime_buf, phase2str(current_phase), pUserCfgFile);
+	fprintf(tunLogPtr,"%s %s: A configured value of -1 means the setting was not configured and the default value will be used.\n",ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,"\n%s %*s %20s\n", header[0], HEADER_PAD, header[1], header[2]);
 	for (count = 0; count < NUMUSERVALUES; count++) 
 	{	int vPad = PAD_MAX-(strlen(userValues[count].aUserValues));
