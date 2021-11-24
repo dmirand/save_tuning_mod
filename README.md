@@ -15,8 +15,10 @@ This repo is comprised of basically two parts:
 
 **Part 1**
 
-There are no known dependencies at this point. There are two relevant 
-directories here:
+There are two known dependencies at this point. 
+-	This package requires 'lshw' and 'dmidecode' utilities to be installed on the system
+
+There are also two relevant directories here:
 
 ```assess-tuning``` and ```packaging```
 
@@ -36,8 +38,13 @@ directories here:
 -	create a temp directory, copy the zip file into it, and type unzip *.zip
 -	after unziping, run the commands as mentioned above "for a quick test"
 
+**Note: Please see packaging/readme.txt for additional instructions**
+-	Basically, there are three files of interest
+	*	```user_config.txt```, ```gdv.sh``` and ```/tmp/tuningLog```
+	*	```user_config.txt``` contains well known values to control how the application operates
+	*	```gdv.sh``` conatins the settings that we are currently interested in
+	*	```/tmp/tuningLog``` will contain the output from the last run
+
 **Part 2**
 
-* test_dtn.c refers to a test module used to create user_dtn.c
-* user_dtn.c is the actual module that will eventually run as the Tuning Module
-* dtn_tune.c refers to the new stuff which only features the assessment portion
+* userspace/user_dtn.c is the actual module that will eventually run as the Tuning Module
