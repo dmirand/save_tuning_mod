@@ -279,7 +279,8 @@ return;
 
 #define bbr 		0
 #define fq		 	1
-char *aStringval[] ={"bbr", "fq"};
+#define htcp	 	2
+char *aStringval[] ={"bbr", "fq", "htcp"};
 
 typedef struct {
     char * setting;
@@ -298,12 +299,12 @@ typedef struct {
 #define TUNING_NUMS	8
 /* Must change TUNING_NUMS if adding more to the array below */
 host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
-    {"net.core.rmem_max",   			67108864,       	-1,      	0},
-    {"net.core.wmem_max",   			67108864,       	-1,      	0},
-    {"net.ipv4.tcp_mtu_probing",			   1,       	-1,      	0},
-    {"net.ipv4.tcp_congestion_control",	    bbr, 			-1,			0}, //uses #defines to help
-    {"net.core.default_qdisc",		         fq, 			-1,			0}, //uses #defines
-    {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
+    {"net.core.rmem_max",   			67108864,          -1,      	0},
+    {"net.core.wmem_max",   			67108864,          -1,      	0},
+    {"net.ipv4.tcp_mtu_probing",			   1,          -1,      	0},
+    {"net.ipv4.tcp_congestion_control",	    htcp, 		   -1,			0}, //uses #defines to help
+    {"net.core.default_qdisc",		          fq, 		   -1,			0}, //uses #defines
+    {"net.ipv4.tcp_rmem",       			4096,      	87380,   33554432},
     {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
     {"MTU",		                               0, 		   84, 			0} //Will leave here but not using for now
 };
