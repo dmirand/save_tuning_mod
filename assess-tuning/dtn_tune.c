@@ -296,6 +296,11 @@ typedef struct {
  * Increase rmem_max and wmem_max so they are at least as large as the third 
  * values of tcp_rmem and tcp_wmem.
  */
+#define NUM_SYSTEM_SETTINGS	100
+#define MAX_SIZE_SYSTEM_SETTING_STRING	768
+int aApplyDefTunCount = 0;
+char aApplyDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
+
 #define TUNING_NUMS	8
 /* Must change TUNING_NUMS if adding more to the array below */
 host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
@@ -326,7 +331,7 @@ void fDoSystemTuning(void)
     char ctime_buf[27];
 	char *pFileCurrentConfigSettings = "/tmp/current_config.orig";
 	char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
-	char aApplyDefTun[768];
+	char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING];
 
     gettime(&clk, ctime_buf);
 
@@ -403,11 +408,19 @@ void fDoSystemTuning(void)
 							
 									if (gApplyDefSysTuning == 'y')
 									{
+										int i;
 										//Apply Inital DefSys Tuning
 										sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
-										//printf("%s\n",aApplyDefTun);	
-										system(aApplyDefTun);
+										i = system(aApplyDefTun);
+										fprintf(tunLogPtr,"return from system call ***%s is %d*****\n", aApplyDefTun,i);
 									}
+									else
+										{
+											//Save in Case Operator want to apply from menu
+											sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
+											memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+											aApplyDefTunCount++;
+										}
 								}
 						}
 						else
@@ -471,10 +484,18 @@ void fDoSystemTuning(void)
 										if (gApplyDefSysTuning == 'y')
 										{
 											//Apply Inital DefSys Tuning
+											int i;
 											sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\"",setting, strValmin, strValdef, strValmax);
-											//printf("%s\n",aApplyDefTun);	
-											system(aApplyDefTun);
+											i = system(aApplyDefTun);
+											fprintf(tunLogPtr,"return from system call ***%s is %d*****\n", aApplyDefTun,i);	
 										}
+										else
+                                        {
+                                            //Save in Case Operator want to apply from menu
+											sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\"",setting, strValmin, strValdef, strValmax);
+                                            memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+                                            aApplyDefTunCount++;
+                                        }
 									}
 									else
                                         fprintf(tunLogPtr,"%*s %s %s %20s\n", vPad, strValmin, strValdef, strValmax, "na");
@@ -566,10 +587,18 @@ void fDoSystemTuning(void)
 							if (gApplyDefSysTuning == 'y')
 							{
 								//Apply Inital DefSys Tuning
+								int i;
 								sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
-								//printf("%s\n",aApplyDefTun);	
-								system(aApplyDefTun);
+								i = system(aApplyDefTun);
+								fprintf(tunLogPtr,"return from system call ***%s is %d*****\n", aApplyDefTun,i);
 							}
+							else
+                               {
+                               		//Save in Case Operator want to apply from menu
+									sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
+                                    memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+                                    aApplyDefTunCount++;
+                               }
 						}
 						else
 							{
@@ -646,11 +675,35 @@ int main(int argc, char **argv)
 	current_phase = LEARNING;
 	
 	fflush(tunLogPtr);
+	gettime(&clk, ctime_buf);
 
+	{
+		// in case the user wants to apply recommended settings interactively
+		int x =0;
+		FILE * fApplyDefTunPtr = 0;	
+		if (aApplyDefTunCount)
+		{
+			fApplyDefTunPtr = fopen("/tmp/applyDefFile","w"); //open and close to wipe out file - other ways to do this, but this should work...
+			if (!fApplyDefTunPtr)
+			{
+				int save_errno = errno;
+				fprintf(tunLogPtr, "%s %s: Could not open */tmp/applyDefFile* for writing, errno = %d***\n", ctime_buf, phase2str(current_phase), save_errno);
+				goto leave;
+			}
+
+			fprintf(fApplyDefTunPtr, "%d\n",aApplyDefTunCount+2);
+
+			for (x = 0; x < aApplyDefTunCount; x++)
+				fprintf(fApplyDefTunPtr, "%s\n",aApplyDefTun2DArray[x]);
+				
+			fclose(fApplyDefTunPtr);	
+		}
+	}
+
+leave:
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: Closing tuning Log***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunLogPtr);
-
 return 0;
 }
 
