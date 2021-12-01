@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
 
 USER_TARGETS := user_dtn
-USER_TARGETS += test_dtn
 
 LIBBPF_DIR = ../libbpf/src/
 COMMON_DIR = ../common/
