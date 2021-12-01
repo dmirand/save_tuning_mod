@@ -280,7 +280,8 @@ return;
 #define bbr 		0
 #define fq		 	1
 #define htcp	 	2
-char *aStringval[] ={"bbr", "fq", "htcp"};
+#define getvalue  	3
+char *aStringval[] ={"bbr", "fq", "htcp", "getvalue"};
 
 typedef struct {
     char * setting;
@@ -295,23 +296,26 @@ typedef struct {
  * for tcp_mem, set it to twice the maximum value for tcp_[rw]mem multiplied by  * the maximum number of running network applications divided by 4096 bytes per  * page.
  * Increase rmem_max and wmem_max so they are at least as large as the third 
  * values of tcp_rmem and tcp_wmem.
+ *
+ * A minimum value of "getvalue" means that I'm just intereste in the value.
  */
 #define NUM_SYSTEM_SETTINGS	100
 #define MAX_SIZE_SYSTEM_SETTING_STRING	768
 int aApplyDefTunCount = 0;
 char aApplyDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
 
-#define TUNING_NUMS	8
+#define TUNING_NUMS	9
 /* Must change TUNING_NUMS if adding more to the array below */
 host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
-    {"net.core.rmem_max",   			67108864,          -1,      	0},
-    {"net.core.wmem_max",   			67108864,          -1,      	0},
-    {"net.ipv4.tcp_mtu_probing",			   1,          -1,      	0},
-    {"net.ipv4.tcp_congestion_control",	    htcp, 		   -1,			0}, //uses #defines to help
-    {"net.core.default_qdisc",		          fq, 		   -1,			0}, //uses #defines
-    {"net.ipv4.tcp_rmem",       			4096,      	87380,   33554432},
-    {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
-    {"MTU",		                               0, 		   84, 			0} //Will leave here but not using for now
+    {"net.core.rmem_max",   						67108864,          -1,      	0},
+    {"net.core.wmem_max",   						67108864,          -1,      	0},
+    {"net.ipv4.tcp_mtu_probing",			   			   1,          -1,      	0},
+	{"net.ipv4.tcp_available_congestion_control",   getvalue,          -1,          0},
+    {"net.ipv4.tcp_congestion_control",	    			htcp, 		   -1,			0}, //uses #defines to help
+    {"net.core.default_qdisc",		          			  fq, 		   -1,			0}, //uses #defines
+    {"net.ipv4.tcp_rmem",       						4096,      	87380,   33554432},
+    {"net.ipv4.tcp_wmem",       						4096,       65536,   33554432},
+    {"MTU",		                               			   0, 		   84, 			0} //Will leave here but not using for now
 };
 void fDoSystemTuning(void)
 {
@@ -322,6 +326,7 @@ void fDoSystemTuning(void)
 	char *q, *r, *p = 0;
 	char setting[256];
 	char value[256];
+	int congestion_control_recommended_avail = 0;
 #if 0
 	char devMTUdata[256];
 #endif
@@ -376,7 +381,9 @@ void fDoSystemTuning(void)
 		else
 			setting[len] = 0;
 
-		fprintf(tunLogPtr,"%s",setting);
+		if (strcmp(setting, "net.ipv4.tcp_available_congestion_control") != 0) //don't print
+			fprintf(tunLogPtr,"%s",setting);
+
 		/* compare with known list now */
 		for (count = 0; count < TUNING_NUMS; count++)
 		{
@@ -408,11 +415,9 @@ void fDoSystemTuning(void)
 							
 									if (gApplyDefSysTuning == 'y')
 									{
-										int i;
 										//Apply Inital DefSys Tuning
 										sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
-										i = system(aApplyDefTun);
-										fprintf(tunLogPtr,"return from system call ***%s is %d*****\n", aApplyDefTun,i);
+										system(aApplyDefTun);
 									}
 									else
 										{
@@ -484,10 +489,8 @@ void fDoSystemTuning(void)
 										if (gApplyDefSysTuning == 'y')
 										{
 											//Apply Inital DefSys Tuning
-											int i;
 											sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\"",setting, strValmin, strValdef, strValmax);
-											i = system(aApplyDefTun);
-											fprintf(tunLogPtr,"return from system call ***%s is %d*****\n", aApplyDefTun,i);	
+											system(aApplyDefTun);
 										}
 										else
                                         {
@@ -582,15 +585,31 @@ void fDoSystemTuning(void)
 					{ //must be a string
 						if (strcmp(value, aStringval[aTuningNumsToUse[count].minimum]) != 0)
 						{
+							if (strcmp(setting, "net.ipv4.tcp_available_congestion_control") == 0)
+                            {
+                                if (strstr(value,"htcp"))
+                                    congestion_control_recommended_avail = 1;
+
+                                break;
+                            }
+							
 							fprintf(tunLogPtr,"%*s", vPad, value);	
+
+                            if (strcmp(setting, "net.ipv4.tcp_congestion_control") == 0)
+                            {
+                                if (!congestion_control_recommended_avail)
+                                {
+                                    fprintf(tunLogPtr,"%26s %20s\n",aStringval[aTuningNumsToUse[count].minimum], "*htcp na");
+                                    break; //skip
+                                }
+                            }
+
 							fprintf(tunLogPtr,"%26s %20c\n",aStringval[aTuningNumsToUse[count].minimum], gApplyDefSysTuning);
 							if (gApplyDefSysTuning == 'y')
 							{
 								//Apply Inital DefSys Tuning
-								int i;
 								sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
-								i = system(aApplyDefTun);
-								fprintf(tunLogPtr,"return from system call ***%s is %d*****\n", aApplyDefTun,i);
+								system(aApplyDefTun);
 							}
 							else
                                {
@@ -603,16 +622,6 @@ void fDoSystemTuning(void)
 						else
 							{
 								fprintf(tunLogPtr,"%*s %25s %20s\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], "na");	
-#if 0
-								if (gApplyDefSysTuning == 'y')
-								{
-									//Apply Inital Def
-									//No need to apply - already set...
-									sprintf(aApplyDefTun,"no need to apply for %s=%s since already set...",setting, aStringval[aTuningNumsToUse[count].minimum]);
-									//printf("%s\n",aApplyDefTun);	
-									system(aApplyDefTun);
-								}
-#endif
 							}
 							
 					}
@@ -639,6 +648,12 @@ void fDoSystemTuning(void)
 
 	fprintf(tunLogPtr, "\n%s %s: ***Closing Tuning Module default system configuration file***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunDefSysCfgPtr);
+
+	{
+        char rem_file[512];
+        sprintf(rem_file,"rm -f %s", pFileCurrentConfigSettings);
+        system(rem_file);
+    }
 
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"\n%s %s: ***End of Default System Tuning***\n", ctime_buf, phase2str(current_phase));
