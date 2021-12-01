@@ -47,4 +47,32 @@ There are also two relevant directories here:
 
 **Part 2**
 
-* userspace/user_dtn.c is the actual module that will eventually run as the Tuning Module
+There are two known dependencies, apart from compilation requirements at this point. 
+-	This package requires 'lshw' and 'dmidecode' utilities to be installed on the system
+
+There are a few relevant directories here:
+
+```userspace```
+-	Contains the source that will eventually run as the Tuning Module
+
+```testing```
+-	Contains source for a loader and bpf kernel file that can be used for testing the Tuning Module
+
+```modules```
+-	Contains source for a LKM (Loadable Kernel Module) that can be used for testing the Tuning Module
+
+**To Compile:**
+
+In order to compile and work with the Tuning Module, do the following:
+-	Initialize the git submodule ```libbpf```
+	* The libbpf source is provided thru the git submodule. 
+	* ```libbpf``` is a library that allows the bpf programs to run.
+	* To use the module it must be initialized by running the following commands in the Tuning Module
+	root directory:
+		*	```git submodule init```
+		*	```git submodule update```
+
+-	Run ```make``` in ```modules/tuningMod/``` and insert the module into the kernel
+-	Run ```make``` in ```testing/``` and use loader to load the bpf file into the kernel
+-	Run ```make``` in ```userspace/``` and start the Tuning Module eg. ```sudo ./user_dtn -d enp6s0```
+	* 	```/tmp/tuningLog``` will contain all the relevant output 
