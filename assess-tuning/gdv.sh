@@ -2,6 +2,7 @@
 sysctl net.core.rmem_max > /tmp/current_config.orig
 sysctl net.core.wmem_max >> /tmp/current_config.orig
 
+#net.ipv4.tcp_available_congestion_control *MUST be checked before* net.ipv4.tcp_congestion_control
 sysctl net.ipv4.tcp_available_congestion_control >> /tmp/current_config.orig
 sysctl net.ipv4.tcp_congestion_control >> /tmp/current_config.orig
 
