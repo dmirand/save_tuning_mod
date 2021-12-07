@@ -413,7 +413,6 @@ sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
 				{"apply_default_system_tuning","n","-1"},
 				{"apply_bios_tuning","n","-1"},
 				{"apply_nic_tuning","n","-1"}
-
 			   };
 
 void fDoGetUserCfgValues(void)
@@ -475,10 +474,8 @@ void fDoGetUserCfgValues(void)
 
 	}
 
-//#define PAD_MAX	39
 #define PAD_MAX	49
 #define HEADER_PAD	45
-//#define HEADER_PAD	35
 #define CONST_PAD	12
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: Final user config values after using settings from %s:\n",ctime_buf, phase2str(current_phase), pUserCfgFile);
@@ -584,7 +581,7 @@ void fDo_lshw(void)
 								else
 								{
 									gettime(&clk, ctime_buf);
-    								fprintf(tunLogPtr,"%s %s: memory size in lshw is not niumerical***\n", ctime_buf, phase2str(current_phase));
+    								fprintf(tunLogPtr,"%s %s: memory size in lshw is not numerical***\n", ctime_buf, phase2str(current_phase));
 									free(line);
 									return; // has to be a digit
 								}
@@ -646,7 +643,11 @@ return;
 
 #define bbr 		0
 #define fq		 	1
-char *aStringval[] ={"bbr", "fq"};
+#define htcp        2
+#define reno        3
+#define cubic       4
+#define getvalue    5
+char *aStringval[] ={"bbr", "fq", "htcp", "reno", "cubic", "getvalue"};
 
 typedef struct {
     char * setting;
@@ -661,30 +662,26 @@ typedef struct {
  * for tcp_mem, set it to twice the maximum value for tcp_[rw]mem multiplied by  * the maximum number of running network applications divided by 4096 bytes per  * page.
  * Increase rmem_max and wmem_max so they are at least as large as the third 
  * values of tcp_rmem and tcp_wmem.
+ *
+ * A minimum value of "getvalue" means that I'm just interested in the value.
  */
-#define TUNING_NUMS	8
+#define NUM_SYSTEM_SETTINGS 100
+#define MAX_SIZE_SYSTEM_SETTING_STRING  768
+int aApplyDefTunCount = 0;
+char aApplyDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
+
+#define TUNING_NUMS	9
 /* Must change TUNING_NUMS if adding more to the array below */
-#if 0
 host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
-    {"net.core.rmem_max",   			67108864,       	-1,      	0},
-    {"net.core.wmem_max",   			67108864,       	-1,      	0},
-    {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
-    {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
-    {"net.ipv4.tcp_mtu_probing",			   1,       	-1,      	0},
-    {"net.ipv4.tcp_congestion_control",	    bbr, 			-1, 			0}, //uses #defines to help
-    {"net.core.default_qdisc",		    fq_codel, 			-1, 			0}, //uses #defines
-    {"MTU",		                               0, 		   84, 			0}
-};
-#endif
-host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
-    {"net.core.rmem_max",   			67108864,       	-1,      	0},
-    {"net.core.wmem_max",   			67108864,       	-1,      	0},
-    {"net.ipv4.tcp_mtu_probing",			   1,       	-1,      	0},
-    {"net.ipv4.tcp_congestion_control",	    bbr, 			-1, 			0}, //uses #defines to help
-    {"net.core.default_qdisc",		         fq, 			-1, 			0}, //uses #defines
-    {"net.ipv4.tcp_rmem",       			4096,       87380,   33554432},
-    {"net.ipv4.tcp_wmem",       			4096,       65536,   33554432},
-    {"MTU",		                               0, 		   84, 			0} //Will leave here but using for now
+    {"net.core.rmem_max",   						67108864,       	-1,      	 0},
+    {"net.core.wmem_max",   						67108864,       	-1,      	 0},
+    {"net.ipv4.tcp_mtu_probing",			   			   1,       	-1,      	 0},
+	{"net.ipv4.tcp_available_congestion_control",   getvalue,           -1,          0},
+    {"net.ipv4.tcp_congestion_control",	    			htcp, 			-1, 		 0}, //uses #defines to help
+    {"net.core.default_qdisc",		         			  fq, 			-1, 		 0}, //uses #defines
+    {"net.ipv4.tcp_rmem",       						4096,        87380,   33554432},
+    {"net.ipv4.tcp_wmem",       						4096,        65536,   33554432},
+    {"MTU",		                               			   0, 	   		84, 	     0} //Will leave here but not using for now
 };
 void fDoSystemTuning(void)
 {
@@ -695,6 +692,7 @@ void fDoSystemTuning(void)
 	char *q, *r, *p = 0;
 	char setting[256];
 	char value[256];
+	int congestion_control_recommended_avail = 0;
 #if 0
 	char devMTUdata[256];
 #endif
@@ -704,7 +702,7 @@ void fDoSystemTuning(void)
     char ctime_buf[27];
 	char *pFileCurrentConfigSettings = "/tmp/current_config.orig";
 	char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
-	char aApplyDefTun[768];
+	char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING];
 
     gettime(&clk, ctime_buf);
 
@@ -731,18 +729,14 @@ void fDoSystemTuning(void)
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: Tuning Module default current configuration file, '%s', opened***\n", ctime_buf, phase2str(current_phase), pFileCurrentConfigSettings);
 	fprintf(tunLogPtr, "%s %s: ***NOTE - Some settings have a minimum, default and maximum values, while others only have a single value***\n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr, "%s %s: ***NOTE - If the recommended value is less than the current value, no changes will be made for that setting***\n\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr, "%s %s: ***NOTE - If the recommended value is less than or equal to the current value, no changes will be made for that setting***\n\n", ctime_buf, phase2str(current_phase));
 
 #define SETTINGS_PAD_MAX 58
 #define HEADER_SETTINGS_PAD  50
-//#define CONST_PAD   12
-    //fprintf(tunLogPtr,"\n%s %*s %20s\n", header[0], HEADER_PAD, header[1], header[2]);
 	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
 	fflush(tunLogPtr);
 
     while ((nread = getline(&line, &len, tunDefSysCfgPtr)) != -1) {
-    	//printf("Retrieved line of length %zu:\n", nread);
-		//printf("&%s&",line);
 		memset(setting,0,256);
 		p = line;
 		q = strchr(line,' '); //search for space	
@@ -753,8 +747,9 @@ void fDoSystemTuning(void)
 		else
 			setting[len] = 0;
 
-		fprintf(tunLogPtr,"%s",setting);
-		//fprintf(tunLogPtr,"\nsetting is ***%s***\n",setting);
+		if (strcmp(setting, "net.ipv4.tcp_available_congestion_control") != 0) //print in this case
+			fprintf(tunLogPtr,"%s",setting);
+
 		/* compare with known list now */
 		for (count = 0; count < TUNING_NUMS; count++)
 		{
@@ -777,24 +772,31 @@ void fDoSystemTuning(void)
 					{
 						if (aTuningNumsToUse[count].xDefault == -1) //only one value
 						{
-							//fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is less than the minimum recommendation...\n",setting, value);	
-							//fprintf(tunLogPtr,"You should change to the recommended setting of *%d* for *%s*.\n",aTuningNumsToUse[count].minimum, setting);
 							fprintf(tunLogPtr,"%*s", vPad, value);	
-							fprintf(tunLogPtr,"%26d %20c\n",aTuningNumsToUse[count].minimum, gApplyDefSysTuning);
+							if (intvalue == aTuningNumsToUse[count].minimum)
+                                fprintf(tunLogPtr,"%26d %20s\n",aTuningNumsToUse[count].minimum, "na");
+                            else
+                                {
+									fprintf(tunLogPtr,"%26d %20c\n",aTuningNumsToUse[count].minimum, gApplyDefSysTuning);
 							
-							if (gApplyDefSysTuning == 'y')
-							{
-								//Apply Inital DefSys Tuning
-								sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
-								printf("%s\n",aApplyDefTun);	
-								//system(aApplyDefTun);
-							}
+									if (gApplyDefSysTuning == 'y')
+									{
+										//Apply Inital DefSys Tuning
+										sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
+										system(aApplyDefTun);
+									}
+									else
+                                        {
+                                            //Save in Case Operator want to apply from menu
+                                            sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
+                                            memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+                                            aApplyDefTunCount++;
+                                        }
+                                }
 						}
 						else
 							{//has min, default and max values - get them...
-								//fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
-								//fprintf(tunLogPtr,"You should change to the recommended setting of *%s* to *%d\t%d\t%d*.\n",setting, aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum);
-								//Let's parse the value stringand get the min, etc. separaately
+								//Let's parse the value string and get the min, etc. separately
 								int i, j, currmax;
 								char min[256];
 								char def[256];
@@ -847,17 +849,22 @@ void fDoSystemTuning(void)
 									y = sprintf(strValmax,"%d",aTuningNumsToUse[count].maximum);
 									total += y;
 									vPad = SETTINGS_PAD_MAX3-total;
-									//fprintf(tunLogPtr,"%11d %d %d %20c y = %d\n", aTuningNumsToUse[count].minimum, aTuningNumsToUse[count].xDefault, aTuningNumsToUse[count].maximum, gApplyDefSysTuning,total);
 									if (aTuningNumsToUse[count].maximum > currmax)
                                     {
 										fprintf(tunLogPtr,"%*s %s %s %20c\n", vPad, strValmin, strValdef, strValmax, gApplyDefSysTuning);
 										if (gApplyDefSysTuning == 'y')
 										{
 											//Apply Inital DefSys Tuning
-											sprintf(aApplyDefTun,"sysctl -w %s=%s %s %s",setting, strValmin, strValdef, strValmax);
-											printf("%s\n",aApplyDefTun);	
-											//system(aApplyDefTun);
+											sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\"",setting, strValmin, strValdef, strValmax);
+											system(aApplyDefTun);
 										}
+										else
+                                        {
+                                            //Save in Case Operator want to apply from menu
+                                            sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\"",setting, strValmin, strValdef, strValmax);
+                                            memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+                                            aApplyDefTunCount++;
+                                        }
 									}
 									else
                                         fprintf(tunLogPtr,"%*s %s %s %20s\n", vPad, strValmin, strValdef, strValmax, "na");
@@ -868,13 +875,12 @@ void fDoSystemTuning(void)
                         { //intvalue > aTuningNumsToUse[count].minimum
                             if (aTuningNumsToUse[count].xDefault == -1) //only one value
                             {
-                                //DAMMM
                                 fprintf(tunLogPtr,"%*s", vPad, value);
                                 fprintf(tunLogPtr,"%26d %20s\n",aTuningNumsToUse[count].minimum, "na");
                             }
                             else
                                 {//has min, default and max values - get them...
-                                //Let's parse the value stringand get the min, etc. separately
+                                //Let's parse the value string and get the min, etc. separately
                                     int i, j;
                                     char min[256];
                                     char def[256];
@@ -936,7 +942,6 @@ void fDoSystemTuning(void)
 						if (strcmp(aTuningNumsToUse[count].setting, "MTU") == 0) //special case - will have to fix up - not using currently
 						{
 							aTuningNumsToUse[count].xDefault = intvalue;
-							//fprintf(tunLogPtr,"Current config value for *%s* is *%s*...\n",setting, value);	
 							fprintf(tunLogPtr,"%*s%26s %20c\n",vPad, value, "-", '-');	
 						}
 #endif
@@ -946,33 +951,71 @@ void fDoSystemTuning(void)
 					{ //must be a string
 						if (strcmp(value, aStringval[aTuningNumsToUse[count].minimum]) != 0)
 						{
-							//fprintf(tunLogPtr,"Current config value for *%s* is *%s* which is not the same as the recommendation...\n",setting, value);	
-							//fprintf(tunLogPtr,"You should change to the recommended setting of *%s* for *%s*.\n",aStringval[aTuningNumsToUse[count].minimum], setting);
+#if 1
+							if (strcmp(setting, "net.ipv4.tcp_available_congestion_control") == 0)
+                           	{
+                                if (strstr(value,"htcp"))
+                                    congestion_control_recommended_avail = 1;
+
+                                break;
+                            }
+#endif
 							fprintf(tunLogPtr,"%*s", vPad, value);	
+
+							if (strcmp(setting, "net.ipv4.tcp_congestion_control") == 0)
+                            {
+                                if (!congestion_control_recommended_avail)
+                                { //try modprobe
+                                    char modprobe_str[64];
+                                    char *line2 = NULL;
+                                    size_t len2 = 0;
+                                    ssize_t nread2;
+                                    FILE * modprobeFilePtr = 0;
+
+                                    sprintf(modprobe_str,"%s","modprobe tcp_htcp > /tmp/modprobe_result 2>&1");
+                                    system(modprobe_str);
+
+                                    modprobeFilePtr = fopen("/tmp/modprobe_result", "r");
+                                    if (!modprobeFilePtr)
+                                    {
+                                        int save_errno = errno;
+                                        gettime(&clk, ctime_buf);
+                                        fprintf(tunLogPtr,"\n%s %s: Opening of %s failed, errno = %d\n",ctime_buf, phase2str(current_phase), "/tmp/modprobe_result", save_errno);
+                                        fprintf(tunLogPtr,"%s %s: ***Could not determine what value to set net.ipv4.tcp_congestion_control", ctime_buf, phase2str(current_phase));
+                                        break;
+                                    }
+
+                                    nread2 = getline(&line2, &len2, modprobeFilePtr);
+                                    fclose(modprobeFilePtr);
+                                    system("rm -f /tmp/modprobe_result");
+
+                                    if (nread2 != -1)
+                                    {
+                                        fprintf(tunLogPtr,"%26s %20s\n",aStringval[aTuningNumsToUse[count].minimum], "*htcp na");
+                                        break; //skip
+                                    }
+
+                                }
+                            }
+
 							fprintf(tunLogPtr,"%26s %20c\n",aStringval[aTuningNumsToUse[count].minimum], gApplyDefSysTuning);
 							if (gApplyDefSysTuning == 'y')
 							{
 								//Apply Inital DefSys Tuning
 								sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
-								printf("%s\n",aApplyDefTun);	
-								//system(aApplyDefTun);
+								system(aApplyDefTun);
 							}
+							else
+                               {
+                                    //Save in Case Operator want to apply from menu
+                                    sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
+                                    memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+                                    aApplyDefTunCount++;
+                               }
 						}
 						else
 							{
-								//fprintf(tunLogPtr,"Current config value for *%s* is *%s* is the same as the recommendation...\n",setting, value);	
-								//fprintf(tunLogPtr,"%*s %25s %20c\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], gApplyDefSysTuning);	
 								fprintf(tunLogPtr,"%*s %25s %20s\n", vPad, value, aStringval[aTuningNumsToUse[count].minimum], "na");	
-#if 0
-								if (gApplyDefSysTuning == 'y')
-								{
-									//Apply Inital Def
-									//No need to apply - already set...
-									sprintf(aApplyDefTun,"no need to apply for %s=%s since already set...",setting, aStringval[aTuningNumsToUse[count].minimum]);
-									printf("%s\n",aApplyDefTun);	
-									//system(aApplyDefTun);
-								}
-#endif
 							}
 							
 					}
@@ -996,11 +1039,17 @@ void fDoSystemTuning(void)
 
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities, please run \n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr,"%s %s: ***'sudo dmidecode' and/or 'sudo lshw'. \n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***'sudo dmidecode' and/or 'sudo lshw'. \n\n", ctime_buf, phase2str(current_phase));
 #endif
 
 	fprintf(tunLogPtr, "\n%s %s: ***Closing Tuning Module default system configuration file***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunDefSysCfgPtr);
+
+	{
+        char rem_file[512];
+        sprintf(rem_file,"rm -f %s", pFileCurrentConfigSettings);
+        system(rem_file);
+    }
 
     gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,  "%s %s: ********************End of Default System Tuning*******************\n", ctime_buf, phase2str(current_phase));
@@ -1105,6 +1154,7 @@ void fDoBiosTuning(void)
                	fprintf(tunLogPtr,"%26s %20s\n", sCPUMAXValue, "na");
 
 			fclose(biosCfgFPtr);
+			system("rm -f /tmp/BIOS.cfgfile"); //cleanup
 		}
 
 	/* find additional things that could be tuned */
@@ -1478,9 +1528,7 @@ int main(int argc, char **argv)
 	fDoBiosTuning();
 
 	gettime(&clk, ctime_buf);
-	//fprintf(tunLogPtr, "%s ***Changing WorkFlow Phase***\n", ctime_buf);
 	current_phase = LEARNING;
-	//fprintf(tunLogPtr, "%s WorkFlow Current Phase is %s***\n", ctime_buf, phase2str(current_phase));
 	
 	fd = open(pDevName, O_RDWR,0);
 
@@ -1499,6 +1547,32 @@ int main(int argc, char **argv)
 	}
 			
 	fflush(tunLogPtr);
+
+#if 0
+	{
+        // in case the user wants to apply recommended settings after??? Maybe we use. We'll see
+        int x =0;
+        FILE * fApplyDefTunPtr = 0;
+        if (aApplyDefTunCount)
+        {
+            fApplyDefTunPtr = fopen("/tmp/applyDefFile","w"); //open and close to wipe out file - other ways to do this, but this should work...
+            if (!fApplyDefTunPtr)
+            {
+                int save_errno = errno;
+                fprintf(tunLogPtr, "%s %s: Could not open */tmp/applyDefFile* for writing, errno = %d***\n", ctime_buf, phase2str(current_phase), save_errno);
+                goto leave;
+            }
+
+            fprintf(fApplyDefTunPtr, "%d\n",aApplyDefTunCount+2);
+
+            for (x = 0; x < aApplyDefTunCount; x++)
+                fprintf(fApplyDefTunPtr, "%s\n",aApplyDefTun2DArray[x]);
+
+            fclose(fApplyDefTunPtr);
+        }
+    }
+leave:
+#endif
 
 #ifdef USING_PERF_EVENT_ARRAY
 		vRetFromRunBpfThread = pthread_create(&doRunBpfCollectionThread_id, NULL, fDoRunBpfCollectionPerfEventArray, &sArgv);
