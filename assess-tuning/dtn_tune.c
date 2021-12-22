@@ -4,10 +4,16 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <bits/stdint-uintn.h>
+//#include <bits/stdint-uintn.h>
 #include <ctype.h>
 #include <getopt.h>
 #include <time.h>
+
+
+#ifndef  uint32_t
+typedef unsigned int uint32_t;
+#endif
+
 #define WORKFLOW_NAMES_MAX	4
 
 
