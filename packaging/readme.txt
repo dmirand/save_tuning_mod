@@ -16,8 +16,8 @@ iii. /tmp/tuningLog
 user_config.txt 
 ===============
 In the user_config.txt, the operator can use certain well known values to 
-control how the Tuning Module operates.  So far, there is only one parameter 
-that can be used.  The following is an explanation for it: 
+control how the Tuning Module operates.  So far, there are 2 parameter 
+that can be used.  The following is an explanation for them: 
 
 a. apply_default_system_tuning 
 The apply_default_system_tuning parameter is used to tell the Tuning Module if 
@@ -25,6 +25,12 @@ it should apply the initial tuning recommendations during the ASSESSMENT phase
 or not. The default value is “n” which means it should not apply the initial
 tuning recommendations.                  
 
+b. make_default_system_tuning_perm
+The make_default_system_tuning_perm is used to tell the Tuning Module if
+it should make permanent any system tunings applied permanent or not. The 
+default value is "n" which means it should not make permanent any system
+tunings applied. Note that a setting of "y" is only valid if 
+apply_default_system_tuning also have a setting of "y".
 
 gdv.sh 
 ======
@@ -42,9 +48,9 @@ The net.core.rmem_max attribute defines the size of the buffer that receives
 UDP packets. The recommended value is 67108864. 
 Note: We found concerning information in the literature that says that setting 
 this attribute over 26 MB caused increased packet drop internally in the 
-Linux kernel. Additional review and evaluation is needed for rmem_max. (some 
+Linux kernel. Additional review and evaluation is needed for rmem_max. (some
 sites have conflicting descriptions – mention this as overall size of buffer 
-whether tcp or udp.)  
+whether tcp or udp.)
 
 b. net.core.wmem_max 
 The net.core.wmem_max attribute defines the size of the buffer that writes UDP 
