@@ -57,18 +57,48 @@ apply_recommended_settings()
 			enter_to_continue
 			return 0
 		fi
-		printf '\n###%s\n\n' "Applying Tuning Recommendations..."
+
+		sysctlmodified=0
+		
+		printf '\n\t%s (y/n): ' \
+			"Do you wish to apply the Tuning Recommendations permanently? " 
+		read answer
+		if [ "$answer" != 'y' -a "$answer" != 'Y' ]
+		then
+			printf '\n###%s\n\n' "Applying Tuning Recommendations until a reboot..."
+		else
+			printf '\n###%s\n\n' "Applying Tuning Recommendations Permanently..."
+			sysctlmodified=1
+		fi
 
 		nlines=`sed -n '1p' /tmp/applyDefFile`	
 		count=2
+
+		if [ ${sysctlmodified} -eq 1 ]
+		then
+			echo "#Start of tuningMod modifications" >> /etc/sysctl.conf	
+		fi
 
 		while [ ${count} -lt ${nlines} ]
 		do
 			linenum=`sed -n "${count}p" /tmp/applyDefFile`
 			echo $linenum > /tmp/tun_app_command
 			sh /tmp/tun_app_command
+		
+			if [ ${sysctlmodified} -eq 1 ]
+			then
+			echo "$linenum >> /etc/sysctl.conf" > /tmp/tun_app_command
+			sh /tmp/tun_app_command
+			fi
+
 			count=`expr $count + 1`
 		done	
+		
+		if [ ${sysctlmodified} -eq 1 ]
+		then
+			echo "#End of tuningMod modifications" >> /etc/sysctl.conf	
+		fi
+
 		rm -f /tmp/tun_app_command
 		rm -f /tmp/applyDefFile
 	else
@@ -99,7 +129,7 @@ logcount=
 		more -d /tmp/tuningLog	
 		printf '\n###%s' "This output has been saved in /tmp/tuningLog"
 	fi
-    enter_to_continue
+	enter_to_continue
 	return 0
 }
 

@@ -32,7 +32,7 @@ static char *pUserCfgFile = "user_config.txt";
 static int gInterval = 2; //default
 static char gTuningMode = 0;
 static char gApplyDefSysTuning = 'n';
-
+static char gMakeTuningPermanent = 'n';
 enum workflow_phases {
 	STARTING,
 	ASSESSMENT,
@@ -57,7 +57,7 @@ const char *phase2str(enum workflow_phases phase)
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	4
+#define NUMUSERVALUES	5
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -68,7 +68,8 @@ typedef struct {
 sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
 			    {"learning_mode_only","y","-1"},
 			    {"API_listen_port","5523","-1"},
-			    {"apply_default_system_tuning","n","-1"}
+			    {"apply_default_system_tuning","n","-1"},
+			    {"make_default_system_tuning_perm","n","-1"}
 			   };
 
 void fDoGetUserCfgValues(void)
@@ -161,6 +162,12 @@ void fDoGetUserCfgValues(void)
 					if (userValues[count].cfg_value[0] == 'y') 
 						gApplyDefSysTuning = 'y';
 				}
+				else
+					if (strcmp(userValues[count].aUserValues,"make_default_system_tuning_perm") == 0)
+					{
+						if (userValues[count].cfg_value[0] == 'y') 
+							gMakeTuningPermanent = 'y';
+					}
 	}
 
 	gettime(&clk, ctime_buf);
@@ -311,6 +318,7 @@ typedef struct {
 #define NUM_SYSTEM_SETTINGS	100
 #define MAX_SIZE_SYSTEM_SETTING_STRING	768
 int aApplyDefTunCount = 0;
+int vModifySysctlFile = 0;
 char aApplyDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
 
 #define TUNING_NUMS	9
@@ -427,6 +435,18 @@ void fDoSystemTuning(void)
 										//Apply Inital DefSys Tuning
 										sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
 										system(aApplyDefTun);
+										if (gMakeTuningPermanent == 'y')
+										{
+											if (vModifySysctlFile == 0)
+											{
+												sprintf(aApplyDefTun,"echo \"#Start of tuningMod modifications\" >> /etc/sysctl.conf");
+												system(aApplyDefTun);
+												vModifySysctlFile = 1;
+											}
+											sprintf(aApplyDefTun,"sysctl -w %s=%d >> /etc/sysctl.conf",setting,aTuningNumsToUse[count].minimum);
+											system(aApplyDefTun);
+										}
+												
 									}
 									else
 										{
@@ -500,6 +520,17 @@ void fDoSystemTuning(void)
 											//Apply Inital DefSys Tuning
 											sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\"",setting, strValmin, strValdef, strValmax);
 											system(aApplyDefTun);
+											if (gMakeTuningPermanent == 'y')
+											{
+												if (vModifySysctlFile == 0)
+												{
+													sprintf(aApplyDefTun,"echo \"#Start of tuningMod modifications\" >> /etc/sysctl.conf");
+													system(aApplyDefTun);
+													vModifySysctlFile = 1;
+												}
+												sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\" >> /etc/sysctl.conf",setting, strValmin, strValdef, strValmax);
+												system(aApplyDefTun);
+											}
 										}
 										else
 											{
@@ -648,6 +679,17 @@ void fDoSystemTuning(void)
 								//Apply Inital DefSys Tuning
 								sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
 								system(aApplyDefTun);
+								if (gMakeTuningPermanent == 'y')
+								{
+									if (vModifySysctlFile == 0)
+									{
+										sprintf(aApplyDefTun,"echo \"#Start of tuningMod modifications\" >> /etc/sysctl.conf");
+										system(aApplyDefTun);
+										vModifySysctlFile = 1;
+									}
+									sprintf(aApplyDefTun,"sysctl -w %s=%s >> /etc/sysctl.conf",setting,aStringval[aTuningNumsToUse[count].minimum]);
+									system(aApplyDefTun);
+								}
 							}
 							else
 				                               {
@@ -696,6 +738,14 @@ void fDoSystemTuning(void)
 	fprintf(tunLogPtr,"%s %s: ***----------------------------***\n\n", ctime_buf, phase2str(current_phase));
 
 	free(line);
+
+	if (vModifySysctlFile)
+	{
+		sprintf(aApplyDefTun,"echo \"#End of tuningMod modifications\" >> /etc/sysctl.conf");
+		system(aApplyDefTun);
+		vModifySysctlFile = 0;
+	}
+
 	return;
 }
 
@@ -749,6 +799,8 @@ int main(int argc, char **argv)
 				
 			fclose(fApplyDefTunPtr);	
 		}
+		else
+			system("rm -f /tmp/applyDefFile");	//There is a way this can be left around by mistake
 	}
 
 leave:
