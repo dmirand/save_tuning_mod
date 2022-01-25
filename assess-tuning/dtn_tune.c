@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,13 +10,11 @@
 #include <getopt.h>
 #include <time.h>
 
-
 #ifndef  uint32_t
 typedef unsigned int uint32_t;
 #endif
 
 #define WORKFLOW_NAMES_MAX	4
-
 
 static void gettime(time_t *clk, char *ctime_buf) 
 {
@@ -26,13 +25,26 @@ static void gettime(time_t *clk, char *ctime_buf)
 
 FILE * tunLogPtr = 0;
 void fDoGetUserCfgValues(void);
+int fCheckInterfaceExists();
+void fDoGetDeviceCap(void);
+void fDoBiosTuning(void);
+void fDoNicTuning(void);
 void fDoSystemtuning(void);
 void fDo_lshw(void);
-static char *pUserCfgFile = "user_config.txt";
+
 static int gInterval = 2; //default
+static int netDeviceSpeed = 0;
+static int numaNode = 0;
+
+static char *pUserCfgFile = "user_config.txt";
 static char gTuningMode = 0;
+static char gApplyBiosTuning = 'n';
+static char gApplyNicTuning = 'n';
 static char gApplyDefSysTuning = 'n';
 static char gMakeTuningPermanent = 'n';
+static char netDevice[128];
+static char vHaveNetDevice = 0;
+
 enum workflow_phases {
 	STARTING,
 	ASSESSMENT,
@@ -57,7 +69,7 @@ const char *phase2str(enum workflow_phases phase)
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	5
+#define NUMUSERVALUES	7
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -66,11 +78,13 @@ typedef struct {
 } sUserValues_t[NUMUSERVALUES];
 
 sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
-			    {"learning_mode_only","y","-1"},
-			    {"API_listen_port","5523","-1"},
-			    {"apply_default_system_tuning","n","-1"},
-			    {"make_default_system_tuning_perm","n","-1"}
-			   };
+			{"learning_mode_only","y","-1"},
+			{"API_listen_port","5523","-1"},
+			{"apply_default_system_tuning","n","-1"},
+			{"apply_bios_tuning","n","-1"},
+			{"apply_nic_tuning","n","-1"},
+			{"make_default_system_tuning_perm","n","-1"}
+			};
 
 void fDoGetUserCfgValues(void)
 {
@@ -163,12 +177,24 @@ void fDoGetUserCfgValues(void)
 						gApplyDefSysTuning = 'y';
 				}
 				else
-					if (strcmp(userValues[count].aUserValues,"make_default_system_tuning_perm") == 0)
+					if (strcmp(userValues[count].aUserValues,"apply_bios_tuning") == 0)
 					{
-						if (userValues[count].cfg_value[0] == 'y') 
-							gMakeTuningPermanent = 'y';
+						if (userValues[count].cfg_value[0] == 'y')
+							gApplyBiosTuning = 'y';
 					}
-	}
+					else
+						if (strcmp(userValues[count].aUserValues,"apply_nic_tuning") == 0)
+						{
+							if (userValues[count].cfg_value[0] == 'y')
+								gApplyNicTuning = 'y';
+						}
+						else
+							if (strcmp(userValues[count].aUserValues,"make_default_system_tuning_perm") == 0)
+							{
+								if (userValues[count].cfg_value[0] == 'y') 
+									gMakeTuningPermanent = 'y';
+							}
+		}
 
 	gettime(&clk, ctime_buf);
 	//fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d***\n", ctime_buf, gInterval);
@@ -317,13 +343,17 @@ typedef struct {
  */
 #define NUM_SYSTEM_SETTINGS	100
 #define MAX_SIZE_SYSTEM_SETTING_STRING	768
-int aApplyDefTunCount = 0;
+int aApplyKernelDefTunCount = 0;
+int aApplyNicDefTunCount = 0;
+int aApplyBiosDefTunCount = 0;
 int vModifySysctlFile = 0;
-char aApplyDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
+char aApplyKernelDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
+char aApplyNicDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
+char aApplyBiosDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
 
-#define TUNING_NUMS	9
-/* Must change TUNING_NUMS if adding more to the array below */
-host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
+#define TUNING_NUMS_10GandUnder	9
+/* Must change TUNING_NUMS_10GandUnder if adding more to the array below */
+host_tuning_vals_t aTuningNumsToUse10GandUnder[TUNING_NUMS_10GandUnder] = {
 	{"net.core.rmem_max",				67108864,          -1,      	0},
 	{"net.core.wmem_max",				67108864,          -1,      	0},
 	{"net.ipv4.tcp_mtu_probing",			       1,          -1,      	0},
@@ -334,6 +364,36 @@ host_tuning_vals_t aTuningNumsToUse[TUNING_NUMS] = {
 	{"net.ipv4.tcp_wmem",				    4096,       65536,   33554432},
 	{"MTU",						       0, 	   84, 		0} //Will leave here but not using for now
 };
+
+#define TUNING_NUMS_Over10GtoUnder100G	9
+/* Must change TUNING_NUMS_Over10GtoUnder100G if adding more to the array below */
+host_tuning_vals_t aTuningNumsToUse_Over10GtoUnder100G[TUNING_NUMS_Over10GtoUnder100G] = {
+	{"net.core.rmem_max",				134217728,         -1,      	0},
+	{"net.core.wmem_max",				134217728,         -1,      	0},
+	{"net.ipv4.tcp_mtu_probing",			       1,          -1,      	0},
+	{"net.ipv4.tcp_available_congestion_control",	getvalue,   	   -1,		0},
+	{"net.ipv4.tcp_congestion_control",	    	    htcp,	   -1,		0}, //uses #defines to help
+	{"net.core.default_qdisc",			      fq, 	   -1,		0}, //uses #defines
+	{"net.ipv4.tcp_rmem",				    4096,      	87380,   67108864},
+	{"net.ipv4.tcp_wmem",				    4096,       65536,   67108864},
+	{"MTU",						       0, 	   84, 		0} //Will leave here but not using for now
+};
+
+#define TUNING_NUMS_100G	11
+/* Must change TUNING_NUMS_100G if adding more to the array below */
+host_tuning_vals_t aTuningNumsToUse100Gb[TUNING_NUMS_100G] = {
+	{"net.core.rmem_max",				2147483647,          -1,      		0},
+	{"net.core.wmem_max",				2147483647,          -1,      		0},
+	{"net.ipv4.tcp_mtu_probing",				 1,          -1,      		0},
+	{"net.ipv4.tcp_available_congestion_control",	  getvalue,	     -1,		0},
+	{"net.ipv4.tcp_congestion_control",		      htcp,	     -1,		0}, //uses #defines to help
+	{"net.core.default_qdisc",				fq,	     -1,		0}, //uses #defines
+	{"net.ipv4.tcp_rmem",				      4096,	  87380,       2147483647},
+	{"net.ipv4.tcp_wmem",				      4096,       65536,       2147483647},
+	{"net.core.netdev_max_backlog",			    250000,	     -1,		0},
+	{"net.ipv4.tcp_no_metrics_save",			 1,	     -1,		0},
+	{"MTU",							 0,	     84, 		0} //leave here not use for now
+};
 void fDoSystemTuning(void)
 {
 
@@ -343,11 +403,13 @@ void fDoSystemTuning(void)
 	char *q, *r, *p = 0;
 	char setting[256];
 	char value[256];
+	host_tuning_vals_t  aTuningNumsToUse[TUNING_NUMS_100G]; 
+	int TUNING_NUMS;
 	int congestion_control_recommended_avail = 0;
 #if 0
 	char devMTUdata[256];
 #endif
-	int count, intvalue, found = 0;
+	int x, count, intvalue, found = 0;
 	FILE * tunDefSysCfgPtr = 0;	
 	time_t clk;
 	char ctime_buf[27];
@@ -359,15 +421,38 @@ void fDoSystemTuning(void)
 
 	fprintf(tunLogPtr,"\n\n%s %s: ***Start of Default System Tuning***\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,"%s %s: ***------------------------------***\n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr, "%s %s: Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf, phase2str(current_phase));
-
-	system("sh ./gdv.sh");
-#if 0
-	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, "%s Getting current MTU value on system***\n", ctime_buf);
-	sprintf(devMTUdata, "echo MTU = `cat /sys/class/net/%s/mtu` >> %s", netDevice, pFileCurrentConfigSettings);
-	system(devMTUdata); 
-#endif
+	if (netDeviceSpeed <= 10000) //less than or equal to 10 Gb/s
+	{
+		TUNING_NUMS = TUNING_NUMS_10GandUnder;
+		for (x = 0; x < TUNING_NUMS; x++)
+		{
+			memcpy(&aTuningNumsToUse[x], &aTuningNumsToUse10GandUnder[x], sizeof(host_tuning_vals_t));
+		}
+		fprintf(tunLogPtr, "%s %s: Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf, phase2str(current_phase));
+		system("sh ./gdv.sh");
+	}
+	else
+		if (netDeviceSpeed < 100000) //less than 100 Gb/s and greater than 10 Gb/s
+		{
+			TUNING_NUMS = TUNING_NUMS_Over10GtoUnder100G;
+			for (x = 0; x < TUNING_NUMS; x++)
+			{
+				memcpy(&aTuningNumsToUse[x], &aTuningNumsToUse_Over10GtoUnder100G[x], sizeof(host_tuning_vals_t));
+			}
+			fprintf(tunLogPtr, "%s %s: Running gdv.sh - Shell script to Get current config settings***\n", ctime_buf, phase2str(current_phase));
+			system("sh ./gdv.sh");
+		}
+		else
+			{
+				TUNING_NUMS = TUNING_NUMS_100G;
+				for (x = 0; x < TUNING_NUMS; x++)
+				{
+					memcpy(&aTuningNumsToUse[x], &aTuningNumsToUse100Gb[x], sizeof(host_tuning_vals_t));
+				}
+				fprintf(tunLogPtr, "%s %s: Running gdv_100.sh - Shell script to Get current config settings***\n", ctime_buf, phase2str(current_phase));
+				system("sh ./gdv_100.sh");
+			}
+	
 	tunDefSysCfgPtr = fopen(pFileCurrentConfigSettings,"r");
 	if (!tunDefSysCfgPtr)
 	{
@@ -452,8 +537,8 @@ void fDoSystemTuning(void)
 										{
 											//Save in Case Operator want to apply from menu
 											sprintf(aApplyDefTun,"sysctl -w %s=%d",setting,aTuningNumsToUse[count].minimum);
-											memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
-											aApplyDefTunCount++;
+											memcpy(aApplyKernelDefTun2DArray[aApplyKernelDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+											aApplyKernelDefTunCount++;
 										}
 								}
 						}
@@ -536,8 +621,8 @@ void fDoSystemTuning(void)
 											{
 												//Save in Case Operator want to apply from menu
 												sprintf(aApplyDefTun,"sysctl -w %s=\"%s %s %s\"",setting, strValmin, strValdef, strValmax);
-												memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
-												aApplyDefTunCount++;
+												memcpy(aApplyKernelDefTun2DArray[aApplyKernelDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+												aApplyKernelDefTunCount++;
 											}
 									}
 									else
@@ -692,11 +777,11 @@ void fDoSystemTuning(void)
 								}
 							}
 							else
-				                               {
+								{
 									//Save in Case Operator want to apply from menu
 									sprintf(aApplyDefTun,"sysctl -w %s=%s",setting,aStringval[aTuningNumsToUse[count].minimum]);
-									memcpy(aApplyDefTun2DArray[aApplyDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
-									aApplyDefTunCount++;
+									memcpy(aApplyKernelDefTun2DArray[aApplyKernelDefTunCount], aApplyDefTun, strlen(aApplyDefTun));
+									aApplyKernelDefTunCount++;
 								}
 						}
 						else
@@ -716,13 +801,6 @@ void fDoSystemTuning(void)
 			fprintf(tunLogPtr,"%s %s: ERR*** Could not find the following setting **%s**\n", ctime_buf, phase2str(current_phase), setting);
 		}
 	}
-
-	/* find additional things that could be tuned */
-	fDo_lshw();
-
-	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities, please run \n", ctime_buf, phase2str(current_phase));
-	fprintf(tunLogPtr,"%s %s: ***'sudo dmidecode' and/or 'sudo lshw'. \n\n", ctime_buf, phase2str(current_phase));
 
 	fprintf(tunLogPtr, "\n%s %s: ***Closing Tuning Module default system configuration file***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunDefSysCfgPtr);
@@ -749,6 +827,1115 @@ void fDoSystemTuning(void)
 	return;
 }
 
+void fDoCpuPerformance()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aBiosSetting[256];
+	char aBiosValue[256];
+	int vPad;
+	char * req_govenor = "performance";
+	FILE *biosCfgFPtr = 0;
+
+	sprintf(aBiosSetting,"cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /tmp/BIOS.cfgfile");
+	system(aBiosSetting);
+
+	biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
+	if (!biosCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/BIOS.cfgfile to work out CPU speed, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, biosCfgFPtr)) != -1)
+			{ 	//getting CPU speed
+				char *q = strchr(line,'\n');
+				strcpy(aBiosValue,line);
+				if (q)
+					aBiosValue[strlen(line)-1] = 0;
+			}
+
+			vPad = SETTINGS_PAD_MAX-(strlen("CPU Governor"));
+			fprintf(tunLogPtr,"%s", "CPU Governor"); //redundancy for visual
+			fprintf(tunLogPtr,"%*s", vPad, aBiosValue);
+
+			if (strcmp(aBiosValue, req_govenor) != 0)
+			{
+				fprintf(tunLogPtr,"%26s %20c\n", req_govenor, gApplyBiosTuning); //could use %26.4f, 
+				if (gApplyBiosTuning == 'y')
+				{
+					//Apply Bios Tuning
+					sprintf(aBiosSetting,"sh -c \'echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor\'");
+					system(aBiosSetting);
+				}
+				else
+					{
+						//Save in Case Operator want to apply from menu
+						sprintf(aBiosSetting,"sh -c \'echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor\'");
+						memcpy(aApplyBiosDefTun2DArray[aApplyBiosDefTunCount], aBiosSetting, strlen(aBiosSetting));
+						aApplyBiosDefTunCount++;
+					}
+			}
+			else
+				fprintf(tunLogPtr,"%26s %20s\n", req_govenor, "na");
+
+			fclose(biosCfgFPtr);
+			system("rm -f /tmp/BIOS.cfgfile"); //cleanup
+		}
+
+	if (line)
+		free(line);
+
+	return;
+}
+
+void fDoIrqBalance()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aBiosSetting[256];
+	char aBiosValue[256];
+	int vPad;
+	char * rec_irq_balance = "inactive";
+	FILE *biosCfgFPtr = 0;
+	int found = 0;
+
+	sprintf(aBiosSetting,"systemctl status irqbalance > /tmp/BIOS.cfgfile");
+	system(aBiosSetting);
+
+	biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
+	if (!biosCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/BIOS.cfgfile to work out CPU speed, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, biosCfgFPtr)) != -1)
+			{ 	//active or inactive?
+
+				int count = 0, ncount = 0;
+                char *y;
+
+                if ((y = strstr(line,"Active:")))
+                {
+                    y = y + strlen("Active:");
+                    while (!isalpha(y[count])) count++;
+
+                    while (isalpha(y[count]))
+                    {
+                        aBiosValue[ncount] = y[count];
+                        ncount++;
+                        count++;
+                    }
+
+                    aBiosValue[ncount] = 0;
+					found = 1;
+					break;
+                }
+			}
+
+			if (found)
+			{
+				vPad = SETTINGS_PAD_MAX-(strlen("IRQ Balance"));
+				fprintf(tunLogPtr,"%s", "IRQ Balance"); //redundancy for visual
+				fprintf(tunLogPtr,"%*s", vPad, aBiosValue);
+
+				if (strcmp(aBiosValue, rec_irq_balance) != 0)
+				{
+					fprintf(tunLogPtr,"%26s %20c\n", rec_irq_balance, gApplyBiosTuning); //could use %26.4f, 
+					if (gApplyBiosTuning == 'y')
+					{
+						//Apply Bios Tuning
+						sprintf(aBiosSetting,"systemctl stop irqbalance");
+						system(aBiosSetting);
+					}
+					else
+						{
+							//Save in Case Operator want to apply from menu
+							sprintf(aBiosSetting,"systemctl stop irqbalance");
+							memcpy(aApplyBiosDefTun2DArray[aApplyBiosDefTunCount], aBiosSetting, strlen(aBiosSetting));
+							aApplyBiosDefTunCount++;
+						}
+				}
+				else
+					fprintf(tunLogPtr,"%26s %20s\n", rec_irq_balance, "na");
+			}
+
+			fclose(biosCfgFPtr);
+			system("rm -f /tmp/BIOS.cfgfile"); //cleanup
+		}
+
+	if (line)
+		free(line);
+
+	return;
+}
+
+void fDoBiosTuning(void)
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
+
+	gettime(&clk, ctime_buf);
+
+	fprintf(tunLogPtr,"\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,  "%s %s: ***************Start of Evaluate BIOS configuration****************\n\n", ctime_buf, phase2str(current_phase));
+
+	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
+	fflush(tunLogPtr);
+
+	fDoCpuPerformance();
+	fDoIrqBalance();
+
+#if 0
+	/* find additional things that could be tuned */
+	fDo_lshw();
+#endif
+
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities,\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: ***please run 'sudo dmidecode' and/or 'sudo lshw'. \n", ctime_buf, phase2str(current_phase));
+
+	fprintf(tunLogPtr,"\n%s %s: ****************End of Evaluate BIOS configuration*****************\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
+
+	return;
+}
+
+int fCheckInterfaceExist() 
+{
+	int vRet;
+	char aNicPath[512];
+
+	sprintf(aNicPath,"/sys/class/net/%s",netDevice);
+	vRet = access(aNicPath, F_OK);
+
+	return vRet;
+}
+
+void fDoGetDeviceCap(void)
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[256];
+	FILE *nicCfgFPtr = 0;
+
+	gettime(&clk, ctime_buf);
+	sprintf(aNicSetting,"cat /sys/class/net/%s/speed > /tmp/NIC.cfgfile",netDevice);
+	system(aNicSetting);
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ 
+				char sValue[256];
+				int cfg_val = 0;
+				//printf("Retrieved line of length %zu:\n", nread);
+				//printf("&%s&",line);
+				strcpy(sValue,line);
+				if (sValue[strlen(sValue)-1] == '\n')
+					sValue[strlen(sValue)-1] = 0;
+
+				cfg_val = atoi(sValue);
+				if (cfg_val == 0) //wasn't set properly
+				{
+					int save_errno = errno;
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr,"%s %s: Value for speed is invalid, value is %s, errno = %d...\n", ctime_buf, phase2str(current_phase), sValue, save_errno);
+				}
+				else
+					{
+						netDeviceSpeed = cfg_val;
+					}
+
+				//should only be one item
+				break;
+			}
+
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		}
+
+	if (line)
+		free(line);
+
+	return;
+}
+
+int fDoGetNuma(void)
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[256];
+	FILE *nicCfgFPtr = 0;
+	int numa = -1;
+	int found = 0;
+
+	gettime(&clk, ctime_buf);
+	sprintf(aNicSetting,"cat /sys/class/net/%s/device/numa_node > /tmp/NIC.cfgfile",netDevice);
+	system(aNicSetting);
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ 
+				char sValue[256];
+				int cfg_val = 0;
+				//printf("Retrieved line of length %zu:\n", nread);
+				//printf("&%s&",line);
+				strcpy(sValue,line);
+				if (sValue[strlen(sValue)-1] == '\n')
+					sValue[strlen(sValue)-1] = 0;
+
+				cfg_val = atoi(sValue);
+				if (cfg_val == -1) 
+				{
+					numa = 0;
+				}
+				else
+					{
+						numa = cfg_val;
+					}
+
+				found = 1;
+				break;
+			}
+
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		
+			if (!found)
+			{
+				fprintf(tunLogPtr,"%s %s: Could not find Numa Node for %s \n", ctime_buf, phase2str(current_phase), netDevice);
+			}	
+		}
+
+	if (line)
+		free(line);
+
+	return numa;
+}
+
+
+static int rec_txqueuelen_Greater10G = 20000; //recommended value for now if greater 10G
+static int rec_txqueuelen = 1000; //recommended value for now if 10G or less
+static int rec_mtu = 9000; //recommended value for now
+static char * rec_tcqdisc = "fq"; //recommended value for now
+void fDoTxQueueLen()
+{
+
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[512];
+	FILE *nicCfgFPtr = 0;
+
+	sprintf(aNicSetting,"cat /sys/class/net/%s/tx_queue_len > /tmp/NIC.cfgfile",netDevice);
+	system(aNicSetting);
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ //1st keyword txqueuelen
+				char sValue[256];
+				int cfg_val = 0;
+				//printf("Retrieved line of length %zu:\n", nread);
+				//printf("&%s&",line);
+				strcpy(sValue,line);
+				if (sValue[strlen(sValue)-1] == '\n')
+					sValue[strlen(sValue)-1] = 0;
+
+				cfg_val = atoi(sValue);
+				if (cfg_val == 0) //wasn't set properly
+				{
+					int save_errno = errno;
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr,"%s %s: Value for txqueuelen is invalid, value is %s, errno = %d...\n", ctime_buf, phase2str(current_phase), sValue, save_errno);
+				}
+				else
+					{
+						int vPad = SETTINGS_PAD_MAX-(strlen("txqueuelen"));
+						fprintf(tunLogPtr,"%s", "txqueuelen"); //redundancy for visual
+						fprintf(tunLogPtr,"%*s", vPad, sValue);
+
+						if (netDeviceSpeed <= 10000) //10G or less
+						{
+							if (rec_txqueuelen > cfg_val)
+							{
+								fprintf(tunLogPtr,"%26d %20c\n", rec_txqueuelen, gApplyNicTuning);
+								if (gApplyNicTuning == 'y')
+								{
+									//Apply Inital DefSys Tuning
+									sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+									system(aNicSetting);
+								}
+								else
+									{
+										//Save in Case Operator want to apply from menu
+										sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen);
+										memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+										aApplyNicDefTunCount++;
+									}
+							}
+							else
+								fprintf(tunLogPtr,"%26d %20s\n", rec_txqueuelen, "na");
+						}
+						else //greater than 10G
+							{
+								if (rec_txqueuelen_Greater10G > cfg_val)
+								{
+									fprintf(tunLogPtr,"%26d %20c\n", rec_txqueuelen_Greater10G, gApplyNicTuning);
+									if (gApplyNicTuning == 'y')
+									{
+										//Apply Inital DefSys Tuning
+										sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen_Greater10G);
+										system(aNicSetting);
+									}
+									else
+										{
+											//Save in Case Operator want to apply from menu
+											sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen_Greater10G);
+											memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+											aApplyNicDefTunCount++;
+										}
+								}
+								else
+									fprintf(tunLogPtr,"%26d %20s\n", rec_txqueuelen_Greater10G, "na");
+							}
+					}
+
+				//should only be one item
+				break;
+			}
+			
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		}
+
+	if (line)
+		free(line);
+
+	return;
+}
+
+void fDoRingBufferSize()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	struct stat sb;
+	char aNicSetting[512];
+	char sRXMAXValue[256];
+	char sRXCURRValue[256];
+	char sTXMAXValue[256];
+	char sTXCURRValue[256];
+	int rxcount = 0;
+	int txcount = 0;
+	int vPad;
+	FILE *nicCfgFPtr = 0;
+
+	sprintf(aNicSetting,"ethtool --show-ring %s 2>/dev/null > /tmp/NIC.cfgfile",netDevice);
+	system(aNicSetting);
+
+	stat("/tmp/NIC.cfgfile", &sb);
+	if (sb.st_size == 0)
+	{
+		//doesn't support ethtool -a
+		goto dnrb_support;
+	}
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ //2nd and 3rd keywords RX and tx ring buffer size
+				int count = 0, ncount = 0;
+
+				if (strstr(line,"RX:") && rxcount == 0)
+				{
+					rxcount++;
+
+					while (!isdigit(line[count])) count++;
+
+					while (isdigit(line[count]))
+					{
+						sRXMAXValue[ncount] = line[count];
+						ncount++;
+						count++;
+					}
+
+					sRXMAXValue[ncount] = 0;
+				}
+				else
+					if (strstr(line,"RX:"))
+					{
+						rxcount++;
+
+						while (!isdigit(line[count])) count++;
+
+						while (isdigit(line[count]))
+						{
+							sRXCURRValue[ncount] = line[count];
+							ncount++;
+							count++;
+						}
+
+						sRXCURRValue[ncount] = 0;
+					}
+					else
+						if (strstr(line,"TX:") && txcount == 0)
+						{
+							txcount++;
+
+							while (!isdigit(line[count])) count++;
+
+							while (isdigit(line[count]))
+							{
+								sTXMAXValue[ncount] = line[count];
+								ncount++;
+								count++;
+							}
+
+							sTXMAXValue[ncount] = 0;
+						}
+						else
+							if (strstr(line,"TX:"))
+							{
+								//should be the last thing I need
+								int cfg_max_val = 0;
+								int cfg_cur_val = 0;
+
+								txcount++;
+
+								while (!isdigit(line[count])) count++;
+
+								while (isdigit(line[count]))
+								{
+									sTXCURRValue[ncount] = line[count];
+									ncount++;
+									count++;
+								}
+
+								sTXCURRValue[ncount] = 0;
+
+								cfg_max_val = atoi(sRXMAXValue);
+								cfg_cur_val = atoi(sRXCURRValue);
+
+								vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_RX"));
+								fprintf(tunLogPtr,"%s", "ring_buffer_RX"); //redundancy for visual
+								fprintf(tunLogPtr,"%*s", vPad, sRXCURRValue);
+
+								if (cfg_max_val > cfg_cur_val)
+								{
+									fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
+									if (gApplyNicTuning == 'y')
+									{
+										//Apply Initial DefSys Tuning
+										sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
+										system(aNicSetting);
+									}
+									else
+										{
+											//Save in Case Operator want to apply from menu
+											sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
+											memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+											aApplyNicDefTunCount++;
+										}
+								}
+								else
+									fprintf(tunLogPtr,"%26d %20s\n", cfg_max_val, "na");
+
+								cfg_max_val = atoi(sTXMAXValue);
+								cfg_cur_val = atoi(sTXCURRValue);
+
+								vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_TX"));
+								fprintf(tunLogPtr,"%s", "ring_buffer_TX"); //redundancy for visual
+								fprintf(tunLogPtr,"%*s", vPad, sTXCURRValue);
+
+								if (cfg_max_val > cfg_cur_val)
+								{
+									fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
+									if (gApplyNicTuning == 'y')
+									{
+										//Apply Initial DefSys Tuning
+										sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
+										system(aNicSetting);
+									}
+									else
+										{
+											//Save in Case Operator want to apply from menu
+											sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
+											memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+											aApplyNicDefTunCount++;
+										}
+								}
+								else
+									fprintf(tunLogPtr,"%26d %20s\n", cfg_max_val, "na");
+
+								//should be the last thing I need
+								break;
+							}
+							else
+								continue;
+			}
+			
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		}
+	
+	if (line)
+		free(line);
+
+	return;
+
+dnrb_support:
+	vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_rx_tx"));
+	fprintf(tunLogPtr,"%s", "ring_buffer_rx_tx"); //redundancy for visual
+	fprintf(tunLogPtr,"%*s", vPad, "not supported");
+	fprintf(tunLogPtr,"%26s %20s\n", "not supported", "na");
+	system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+
+	return;
+}
+
+void fDoLRO() 
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[512];
+	int vPad;
+	struct stat sb;
+	FILE *nicCfgFPtr = 0;
+	int fixed = 0;
+	char * recommended_val = "on";
+
+	sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload > /tmp/NIC.cfgfile",netDevice);
+	system(aNicSetting);
+    
+	stat("/tmp/NIC.cfgfile", &sb);
+	if (sb.st_size == 0) 
+	{
+		//doesn't support receive offload
+		goto dn_support;
+	}
+	else
+		{
+			sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload | grep fixed > /tmp/NIC.cfgfile",netDevice);
+			system(aNicSetting);
+	
+			stat("/tmp/NIC.cfgfile", &sb);
+			if (sb.st_size == 0); //not fixed
+			else
+				{
+					fixed = 1;
+    				}
+		}
+    
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ //large receive offload
+				int count = 0, ncount = 0;
+				char *q;
+				char sLROValue[256];
+
+				q = line + strlen("large-receive-offload");
+				strcpy(sLROValue,q);
+
+				while (!isalpha(q[count])) count++;
+
+				while (isalpha(q[count]))
+				{
+					sLROValue[ncount] = q[count];
+					ncount++;
+					count++;
+				}
+
+				sLROValue[ncount] = 0;
+
+				vPad = SETTINGS_PAD_MAX-(strlen("large-receive-offload"));
+				fprintf(tunLogPtr,"%s", "large-receive-offload"); //redundancy for visual
+				fprintf(tunLogPtr,"%*s", vPad, sLROValue);
+
+				if ((strcmp(recommended_val, sLROValue) != 0) && !fixed)
+				{
+					fprintf(tunLogPtr,"%26s %20c\n", recommended_val, gApplyNicTuning);
+					if (gApplyNicTuning == 'y')
+					{
+						//Apply Initial DefSys Tuning
+						sprintf(aNicSetting,"ethtool -K %s lro %s", netDevice, recommended_val);
+						system(aNicSetting);
+					}
+					else
+						{
+							//Save in Case Operator want to apply from menu
+							sprintf(aNicSetting,"ethtool -K %s lro %s", netDevice, recommended_val);
+							memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+							aApplyNicDefTunCount++;
+						}
+				}
+				else
+					if (fixed)
+						fprintf(tunLogPtr,"%26s %20s\n", recommended_val, "na - fixed");
+					else
+						fprintf(tunLogPtr,"%26s %20s\n", recommended_val, "na");
+
+				//should be only one line in the file
+				break;
+			}
+	
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		}
+	
+	if (line)
+		free(line);
+	
+	return;
+
+dn_support:
+	vPad = SETTINGS_PAD_MAX-(strlen("large-receive-offload"));
+	fprintf(tunLogPtr,"%s", "large-receive-offload"); //redundancy for visual
+	fprintf(tunLogPtr,"%*s", vPad, "not supported");
+	fprintf(tunLogPtr,"%26s %20s\n", recommended_val, "na");
+			
+	fclose(nicCfgFPtr);
+	system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+
+	return;
+}
+
+void fDoMTU()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[512];
+	FILE *nicCfgFPtr = 0;
+
+	sprintf(aNicSetting,"cat /sys/class/net/%s/mtu  > /tmp/NIC.cfgfile",netDevice);
+	system(aNicSetting);
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ //mtu
+				char sValue[256];
+				int cfg_val = 0;
+				strcpy(sValue,line);
+				if (sValue[strlen(sValue)-1] == '\n')
+					sValue[strlen(sValue)-1] = 0;
+
+				cfg_val = atoi(sValue);
+				if (cfg_val == 0) //wasn't set properly
+				{
+					int save_errno = errno;
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr,"%s %s: Value for mtu is invalid, value is %s, errno = %d...\n", ctime_buf, phase2str(current_phase), sValue, save_errno);
+				}
+				else
+					{
+						int vPad = SETTINGS_PAD_MAX-(strlen("mtu"));
+						fprintf(tunLogPtr,"%s", "mtu"); //redundancy for visual
+						fprintf(tunLogPtr,"%*s", vPad, sValue);
+
+						if (rec_mtu > cfg_val)
+						{
+							fprintf(tunLogPtr,"%26d %20c\n", rec_mtu, gApplyNicTuning);
+							if (gApplyNicTuning == 'y')
+							{
+								//Apply Inital DefSys Tuning
+								sprintf(aNicSetting,"sudo ip link set dev %s mtu %d", netDevice, rec_mtu);
+								system(aNicSetting);
+							}
+							else
+								{
+									//Save in Case Operator want to apply from menu
+									sprintf(aNicSetting,"sudo ip link set dev %s mtu %d", netDevice, rec_mtu);
+									memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+									aApplyNicDefTunCount++;
+								}
+						}
+						else
+							fprintf(tunLogPtr,"%26d %20s\n", cfg_val, "na");
+					}
+
+				//should only be one item
+				break;
+			}
+	
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		}
+	
+	if (line)
+		free(line);
+
+	return;
+}
+
+void fDoTcQdiscFq()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	struct stat sb;
+	int found = 0;
+	char aQdiscVal[512];
+	char aNicSetting[1024];
+	FILE *nicCfgFPtr = 0;
+			
+	sprintf(aNicSetting,"tc qdisc show dev %s root 2>/dev/null > /tmp/NIC.cfgfile",netDevice);
+	system(aNicSetting);
+	stat("/tmp/NIC.cfgfile", &sb);
+	if (sb.st_size == 0) //some OS don't like to have the "root" as an option
+	{
+		sprintf(aNicSetting,"tc qdisc show dev %s  > /tmp/NIC.cfgfile",netDevice);
+		system(aNicSetting);
+	}
+			
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ //tc qdisc
+				char sValue[512];
+				char *y = 0;
+				strcpy(sValue,line);
+				if (sValue[strlen(sValue)-1] == '\n')
+					sValue[strlen(sValue)-1] = 0;
+					
+				y = strstr(sValue,"qdisc");
+				if (y)
+				{
+					int count = 0;
+					y = y + strlen("qdisc");
+					while isblank((int)*y) y++;
+					memset(aQdiscVal,0,sizeof(aQdiscVal));
+					while isgraph((int)*y) 
+					{
+						aQdiscVal[count] = *y;
+						y++;	
+						count++;
+					}
+					
+					found = 1;
+					break;
+				}
+			}
+
+			if (found)
+			{
+				int vPad = SETTINGS_PAD_MAX-(strlen("tc_qdisc"));
+				found = 0;
+				fprintf(tunLogPtr,"%s", "tc_qdisc"); //redundancy for visual
+				fprintf(tunLogPtr,"%*s", vPad, aQdiscVal);
+
+				if (strcmp(rec_tcqdisc,aQdiscVal) != 0)
+				{
+					fprintf(tunLogPtr,"%26s %20c\n", rec_tcqdisc, gApplyNicTuning);
+					if (gApplyNicTuning == 'y')
+					{
+						//Apply Inital DefSys Tuning
+						sprintf(aNicSetting,"tc qdisc del dev %s root %s 2>/dev/null; tc qdisc add dev %s root fq", netDevice, aQdiscVal, netDevice);
+						system(aNicSetting);
+					}
+					else
+						{
+							//Save in Case Operator want to apply from menu
+							sprintf(aNicSetting,"tc qdisc del dev %s root %s 2>/dev/null; tc qdisc add dev %s root fq", netDevice, aQdiscVal, netDevice);
+							memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+							aApplyNicDefTunCount++;
+						}
+				}
+				else
+					fprintf(tunLogPtr,"%26s %20s\n", aQdiscVal, "na");
+			}
+
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		}
+	return;
+}
+
+void fDoFlowControl()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[512];
+	int vPad;
+	struct stat sb;
+	FILE *nicCfgFPtr = 0;
+	char * rec_rx_val = "on";
+	char * rec_tx_val = "on";
+	char sRXCURRValue[256];
+	char sTXCURRValue[256];
+
+	sprintf(aNicSetting,"ethtool -a %s 2>/dev/null > /tmp/NIC.cfgfile",netDevice);
+	system(aNicSetting);
+
+	stat("/tmp/NIC.cfgfile", &sb);
+    if (sb.st_size == 0)
+    {
+        //doesn't support ethtool -a
+        goto dnflow_support;
+    }
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ //RX and TX flow control 
+				int count = 0, ncount = 0;
+				char *y;
+
+				if ((y = strstr(line,"RX:")))
+				{
+					y = y + strlen("RX:");
+					while (!isalpha(y[count])) count++;
+
+					while (isalpha(y[count]))
+					{
+						sRXCURRValue[ncount] = y[count];
+						ncount++;
+						count++;
+					}
+
+					sRXCURRValue[ncount] = 0;
+				}
+				else
+					if ((y = strstr(line,"TX:")))
+					{
+						y = y + strlen("TX:");
+						while (!isalpha(y[count])) count++;
+
+						while (isalpha(y[count]))
+						{
+							sTXCURRValue[ncount] = y[count];
+							ncount++;
+							count++;
+						}
+
+						sTXCURRValue[ncount] = 0;
+					}
+				}
+
+				vPad = SETTINGS_PAD_MAX-(strlen("flow_control_RX"));
+				fprintf(tunLogPtr,"%s", "flow_control_RX"); //redundancy for visual
+				fprintf(tunLogPtr,"%*s", vPad, sRXCURRValue);
+
+				if (strcmp(rec_rx_val,sRXCURRValue) != 0)
+				{
+					fprintf(tunLogPtr,"%26s %20c\n", rec_rx_val, gApplyNicTuning);
+					if (gApplyNicTuning == 'y')
+					{
+							//Apply Initial DefSys Tuning
+							sprintf(aNicSetting,"ethtool -A %s rx %s", netDevice, rec_rx_val);
+							system(aNicSetting);
+					}
+					else
+						{
+							//Save in Case Operator want to apply from menu
+							sprintf(aNicSetting,"ethtool -A %s rx %s", netDevice, rec_rx_val);
+							memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+							aApplyNicDefTunCount++;
+						}
+				}
+				else
+					fprintf(tunLogPtr,"%26s %20s\n", rec_rx_val, "na");
+
+				vPad = SETTINGS_PAD_MAX-(strlen("flow_control_TX"));
+				fprintf(tunLogPtr,"%s", "flow_control_TX"); //redundancy for visual
+				fprintf(tunLogPtr,"%*s", vPad, sTXCURRValue);
+
+				if (strcmp(rec_tx_val, sTXCURRValue) != 0)
+				{
+					fprintf(tunLogPtr,"%26s %20c\n", rec_tx_val, gApplyNicTuning);
+					if (gApplyNicTuning == 'y')
+					{
+						//Apply Initial DefSys Tuning
+						sprintf(aNicSetting,"ethtool -A %s tx %s", netDevice, rec_tx_val);
+						system(aNicSetting);
+					}
+					else
+						{
+							//Save in Case Operator want to apply from menu
+							sprintf(aNicSetting,"ethtool -A %s tx %s", netDevice, rec_tx_val);
+							memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+							aApplyNicDefTunCount++;
+						}
+				}
+				else
+					fprintf(tunLogPtr,"%26s %20s\n", rec_tx_val, "na");
+
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		}
+	
+	if (line)
+		free(line);
+	
+	return;
+
+dnflow_support:
+	vPad = SETTINGS_PAD_MAX-(strlen("flow_control_rx_tx"));
+	fprintf(tunLogPtr,"%s", "flow_control_rx_tx"); //redundancy for visual
+	fprintf(tunLogPtr,"%*s", vPad, "not supported");
+	fprintf(tunLogPtr,"%26s %20s\n", "not supported", "na");
+	system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+
+	return;
+}
+
+void fDoIrqAffinity()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char aNicSetting[512];
+	gettime(&clk, ctime_buf);
+
+	{
+		fprintf(tunLogPtr,"\n%s %s: %s", ctime_buf, phase2str(current_phase), "NOTE: **IRQ Affinity Tuning** *will be done when NIC settings applied*\n"); 
+		if (gApplyNicTuning == 'y')
+		{
+			//Apply 
+			sprintf(aNicSetting,"./set_irq_affinity.sh %s", netDevice);
+			system(aNicSetting);
+		}
+		else
+			{
+				//Save in Case Operator want to apply from menu
+				sprintf(aNicSetting,"./set_irq_affinity.sh %s", netDevice);
+				memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+				aApplyNicDefTunCount++;
+			}
+	}
+
+	return;
+}
+
+void fDoNicTuning(void)
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *header2[] = {"Setting", "Current Value", "Recommended Value", "Applied"};
+
+	gettime(&clk, ctime_buf);
+
+	fprintf(tunLogPtr,"\n%s %s: -------------------------------------------------------------------\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,  "%s %s: ****************Start of Evaluate NIC configuration****************\n\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s %s: Speed of device \"%s\" is %dGb/s\n\n", ctime_buf, phase2str(current_phase), netDevice, netDeviceSpeed/1000);
+
+	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
+	fflush(tunLogPtr);
+
+	fDoTxQueueLen();
+	fDoRingBufferSize();
+	fDoLRO();//large receive offload
+	fDoMTU();
+	fDoTcQdiscFq();
+	fDoFlowControl();
+	fDoIrqAffinity();
+
+/*
+ * ethtool -i enoX gives bus info
+ * then sudo lspci -vvv -s <bus info> gives speed, width etc.
+ * some systems dont dont show it though...
+*/
+
+/* numactl --hardware will show number of cores per numa node */
+
+	fprintf(tunLogPtr,"\n%s %s: *****************End of Evaluate NIC configuration*****************\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
+
+
+	return;
+}
+
 int main(int argc, char **argv) 
 {
 
@@ -765,12 +1952,47 @@ int main(int argc, char **argv)
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: tuning Log opened***\n", ctime_buf, phase2str(current_phase));
 
+	if (argc == 2)
+	{
+		int vRet;
+		strcpy(netDevice,argv[1]);
+		vRet = fCheckInterfaceExist();
+		if (!vRet)
+		{
+			vHaveNetDevice = 1;
+			fprintf(tunLogPtr, "%s %s: Found Device %s***\n", ctime_buf, phase2str(current_phase), argv[1]);
+		}
+		else
+		{
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr, "%s %s: Device not found, Invalid device name *%s*, Exiting...***\n", ctime_buf, phase2str(current_phase), argv[1]);
+			exit(-1);
+		}
+
+	}
+	else
+		{
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr, "%s %s: Device name not supplied, Will just tune kernel ***\n", ctime_buf, phase2str(current_phase));
+		}
+
 	gettime(&clk, ctime_buf);
 	current_phase = ASSESSMENT;
 
 	fDoGetUserCfgValues();
 
+	if (vHaveNetDevice)
+	{
+		fDoGetDeviceCap();
+		numaNode = fDoGetNuma();
+	}
+
 	fDoSystemTuning();
+
+	if (argc == 2)
+		fDoNicTuning();
+
+	fDoBiosTuning();
 
 	gettime(&clk, ctime_buf);
 	current_phase = LEARNING;
@@ -781,26 +2003,76 @@ int main(int argc, char **argv)
 	{
 		// in case the user wants to apply recommended settings interactively
 		int x =0;
-		FILE * fApplyDefTunPtr = 0;	
-		if (aApplyDefTunCount)
+		FILE * fApplyKernelDefTunPtr = 0;	
+		if (aApplyKernelDefTunCount)
 		{
-			fApplyDefTunPtr = fopen("/tmp/applyDefFile","w"); //open and close to wipe out file - other ways to do this, but this should work...
-			if (!fApplyDefTunPtr)
+			fApplyKernelDefTunPtr = fopen("/tmp/applyKernelDefFile","w"); //open and close to wipe out file - other ways to do this, but this should work...
+			if (!fApplyKernelDefTunPtr)
 			{
 				int save_errno = errno;
-				fprintf(tunLogPtr, "%s %s: Could not open */tmp/applyDefFile* for writing, errno = %d***\n", ctime_buf, phase2str(current_phase), save_errno);
+				fprintf(tunLogPtr, "%s %s: Could not open */tmp/applyKernelDefFile* for writing, errno = %d***\n", ctime_buf, phase2str(current_phase), save_errno);
 				goto leave;
 			}
 
-			fprintf(fApplyDefTunPtr, "%d\n",aApplyDefTunCount+2);
+			fprintf(fApplyKernelDefTunPtr, "%d\n",aApplyKernelDefTunCount+2);
 
-			for (x = 0; x < aApplyDefTunCount; x++)
-				fprintf(fApplyDefTunPtr, "%s\n",aApplyDefTun2DArray[x]);
+			for (x = 0; x < aApplyKernelDefTunCount; x++)
+				fprintf(fApplyKernelDefTunPtr, "%s\n",aApplyKernelDefTun2DArray[x]);
 				
-			fclose(fApplyDefTunPtr);	
+			fclose(fApplyKernelDefTunPtr);	
 		}
 		else
-			system("rm -f /tmp/applyDefFile");	//There is a way this can be left around by mistake
+			system("rm -f /tmp/applyKernelDefFile");	//There is a way this can be left around by mistake
+	}
+
+	{
+		// in case the user wants to apply recommended settings interactively
+		int x =0;
+		FILE * fApplyNicDefTunPtr = 0;	
+		if (aApplyNicDefTunCount)
+		{
+			fApplyNicDefTunPtr = fopen("/tmp/applyNicDefFile","w"); //open and close to wipe out file - other ways to do this, but this should work...
+			if (!fApplyNicDefTunPtr)
+			{
+				int save_errno = errno;
+				fprintf(tunLogPtr, "%s %s: Could not open */tmp/applyNicDefFile* for writing, errno = %d***\n", ctime_buf, phase2str(current_phase), save_errno);
+				goto leave;
+			}
+
+			fprintf(fApplyNicDefTunPtr, "%d\n",aApplyNicDefTunCount+2);
+
+			for (x = 0; x < aApplyNicDefTunCount; x++)
+				fprintf(fApplyNicDefTunPtr, "%s\n",aApplyNicDefTun2DArray[x]);
+				
+			fclose(fApplyNicDefTunPtr);	
+		}
+		else
+			system("rm -f /tmp/applyNicDefFile");	//There is a way this can be left around by mistake
+	}
+
+	{
+		// in case the user wants to apply recommended settings interactively
+		int x =0;
+		FILE * fApplyBiosDefTunPtr = 0;	
+		if (aApplyBiosDefTunCount)
+		{
+			fApplyBiosDefTunPtr = fopen("/tmp/applyBiosDefFile","w"); //open and close to wipe out file - other ways to do this, but this should work...
+			if (!fApplyBiosDefTunPtr)
+			{
+				int save_errno = errno;
+				fprintf(tunLogPtr, "%s %s: Could not open */tmp/applyBiosDefFile* for writing, errno = %d***\n", ctime_buf, phase2str(current_phase), save_errno);
+				goto leave;
+			}
+
+			fprintf(fApplyBiosDefTunPtr, "%d\n",aApplyBiosDefTunCount+2);
+
+			for (x = 0; x < aApplyBiosDefTunCount; x++)
+				fprintf(fApplyBiosDefTunPtr, "%s\n",aApplyBiosDefTun2DArray[x]);
+				
+			fclose(fApplyBiosDefTunPtr);	
+		}
+		else
+			system("rm -f /tmp/applyBiosDefFile");	//There is a way this can be left around by mistake
 	}
 
 leave:

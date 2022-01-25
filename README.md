@@ -26,6 +26,7 @@ There are also two relevant directories here:
 -	go to assess-tuning directory and run ```make```
 -	For a quick test:
 	*	type ```sudo ./dtnmenu``` to run with a menu interaction
+	*	type ```sudo ./dtnmenu <device>``` to also configure a device
 	*	you will get output on your screen with the menu interaction
 	*	type ```sudo ./dtn_tune``` to run without menu interaction
 	* 	/tmp/tuningLog will contain the output from the last run

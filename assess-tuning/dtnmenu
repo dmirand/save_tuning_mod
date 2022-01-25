@@ -9,7 +9,7 @@
 # main execution thread
     if [ `id -u` = 0 ]
     then
-		sh dtn_menu.sh
+		sh dtn_menu.sh $1
 	else
         printf '\n***%s\n' "You must be superuser to run dtnmenu..."
         printf '***%s\n\n' "Exiting..."
