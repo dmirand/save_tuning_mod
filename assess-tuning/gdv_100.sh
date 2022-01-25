@@ -11,3 +11,7 @@ sysctl net.core.default_qdisc >> /tmp/current_config.orig
 
 sysctl net.ipv4.tcp_rmem >> /tmp/current_config.orig
 sysctl net.ipv4.tcp_wmem >> /tmp/current_config.orig
+
+sysctl net.core.netdev_max_backlog >> /tmp/current_config.orig
+sysctl net.ipv4.tcp_no_metrics_save >> /tmp/current_config.orig
+
