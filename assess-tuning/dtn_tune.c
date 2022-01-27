@@ -901,6 +901,7 @@ void fDoIrqBalance()
 	char *line = NULL;
 	size_t len = 0;
 	ssize_t nread;
+	struct stat sb;
 	char aBiosSetting[256];
 	char aBiosValue[256];
 	int vPad;
@@ -908,8 +909,15 @@ void fDoIrqBalance()
 	FILE *biosCfgFPtr = 0;
 	int found = 0;
 
-	sprintf(aBiosSetting,"systemctl status irqbalance > /tmp/BIOS.cfgfile");
+	sprintf(aBiosSetting,"systemctl status irqbalance > /tmp/BIOS.cfgfile 2>/dev/null");
 	system(aBiosSetting);
+
+	stat("/tmp/BIOS.cfgfile", &sb);
+	if (sb.st_size == 0)
+	{
+		//doesn't support checking irqbalance
+		goto dns_irqbal;
+	}
 
 	biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
 	if (!biosCfgFPtr)
@@ -977,6 +985,15 @@ void fDoIrqBalance()
 
 	if (line)
 		free(line);
+
+	return;
+
+dns_irqbal:
+        vPad = SETTINGS_PAD_MAX-(strlen("IRQ Balance"));
+        fprintf(tunLogPtr,"%s", "IRQ Balance"); //redundancy for visual
+        fprintf(tunLogPtr,"%*s", vPad, "not supported");
+        fprintf(tunLogPtr,"%26s %20s\n", "not supported", "na");
+        system("rm -f /tmp/BIOS.cfgfile"); //remove file after use
 
 	return;
 }
@@ -1759,11 +1776,11 @@ void fDoFlowControl()
 	system(aNicSetting);
 
 	stat("/tmp/NIC.cfgfile", &sb);
-    if (sb.st_size == 0)
-    {
-        //doesn't support ethtool -a
-        goto dnflow_support;
-    }
+	if (sb.st_size == 0)
+	{
+		//doesn't support ethtool -a
+		goto dnflow_support;
+	}
 
 	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
 	if (!nicCfgFPtr)
