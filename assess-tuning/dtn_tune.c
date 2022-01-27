@@ -834,21 +834,72 @@ void fDoCpuPerformance()
 	char *line = NULL;
 	size_t len = 0;
 	ssize_t nread;
+	struct stat sb;
 	char aBiosSetting[256];
 	char aBiosValue[256];
 	int vPad;
-	char * req_govenor = "performance";
+	int other_way = 0;
+	char * req_governor = "performance";
 	FILE *biosCfgFPtr = 0;
 
-	sprintf(aBiosSetting,"cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /tmp/BIOS.cfgfile");
+	memset(aBiosValue,0,sizeof(aBiosValue));
+	sprintf(aBiosSetting,"cat /sys/devices/system/cpu/cpu*/cpufreq/sscaling_governor > /tmp/BBIOS.cfgfile 2>/dev/null");
 	system(aBiosSetting);
 
+	stat("/tmp/BBIOS.cfgfile", &sb);
+	if (sb.st_size == 0)
+	{
+		//doesn't support scaling Gov this way
+		//lets see if lsb_reease in on here
+		sprintf(aBiosSetting,"lsb_release -d > /tmp/BBIOS.cfgfile");
+		system(aBiosSetting);
+	
+		biosCfgFPtr = fopen("/tmp/BBIOS.cfgfile","r");
+		while((nread = getline(&line, &len, biosCfgFPtr)) != -1)
+		{ 	//getting CPU speed
+			char *q = strstr(line,"Ubuntu");
+			char *r = strstr(line,"ubuntu");
+
+			if (q || r)
+			{
+				//Debian box
+				printf ("HELLLLLLLLLLLLLLLLLLLLLLOOOOOOOOOOOOOOO\n");
+				fclose(biosCfgFPtr);
+				sprintf(aBiosSetting,"sudo cpupower frequency-info | grep \"The governor\" > /tmp/BBIOS.cfgfile");
+				system(aBiosSetting);
+		
+				biosCfgFPtr = fopen("/tmp/BBIOS.cfgfile","r");
+				while((nread = getline(&line, &len, biosCfgFPtr)) != -1)
+				{
+					char * g = strstr(line, "The governor");
+					if (g)
+					{
+						int count = 0;
+						g = g + strlen("The governor");
+						while (!isalpha(*g)) g++;
+						while (isalpha(g[count]))
+						{
+							aBiosValue[count] = g[count];
+							count++;
+						}
+						printf("Frequency = *******%s*****\n",aBiosValue);
+						other_way = 1;
+						goto get_freq_other_way;
+					}
+				}
+			}
+		}
+		
+		return;
+	}
+
 	biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
+get_freq_other_way:
 	if (!biosCfgFPtr)
 	{
 		int save_errno = errno;
 		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/BIOS.cfgfile to work out CPU speed, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/BIOS.cfgfile to work out CPU performance, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
 	}
 	else
 		{
@@ -864,25 +915,33 @@ void fDoCpuPerformance()
 			fprintf(tunLogPtr,"%s", "CPU Governor"); //redundancy for visual
 			fprintf(tunLogPtr,"%*s", vPad, aBiosValue);
 
-			if (strcmp(aBiosValue, req_govenor) != 0)
+			if (strcmp(aBiosValue, req_governor) != 0)
 			{
-				fprintf(tunLogPtr,"%26s %20c\n", req_govenor, gApplyBiosTuning); //could use %26.4f, 
+				fprintf(tunLogPtr,"%26s %20c\n", req_governor, gApplyBiosTuning); //could use %26.4f, 
 				if (gApplyBiosTuning == 'y')
 				{
 					//Apply Bios Tuning
-					sprintf(aBiosSetting,"sh -c \'echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor\'");
+					if (other_way)
+						sprintf(aBiosSetting,"sudo cpupower frequency-set -g %s",req_governor);
+					else
+						sprintf(aBiosSetting,"sh -c \'echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor\'");
+
 					system(aBiosSetting);
 				}
 				else
 					{
 						//Save in Case Operator want to apply from menu
-						sprintf(aBiosSetting,"sh -c \'echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor\'");
+						if (other_way)
+							sprintf(aBiosSetting,"sudo cpupower frequency-set -g %s",req_governor);
+						else
+							sprintf(aBiosSetting,"sh -c \'echo performance | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor\'");
+
 						memcpy(aApplyBiosDefTun2DArray[aApplyBiosDefTunCount], aBiosSetting, strlen(aBiosSetting));
 						aApplyBiosDefTunCount++;
 					}
 			}
 			else
-				fprintf(tunLogPtr,"%26s %20s\n", req_govenor, "na");
+				fprintf(tunLogPtr,"%26s %20s\n", req_governor, "na");
 
 			fclose(biosCfgFPtr);
 			system("rm -f /tmp/BIOS.cfgfile"); //cleanup
