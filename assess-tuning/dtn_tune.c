@@ -843,57 +843,38 @@ void fDoCpuPerformance()
 	FILE *biosCfgFPtr = 0;
 
 	memset(aBiosValue,0,sizeof(aBiosValue));
-	sprintf(aBiosSetting,"cat /sys/devices/system/cpu/cpu*/cpufreq/sscaling_governor > /tmp/BBIOS.cfgfile 2>/dev/null");
+	sprintf(aBiosSetting,"cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor > /tmp/BIOS.cfgfile 2>/dev/null");
 	system(aBiosSetting);
 
-	stat("/tmp/BBIOS.cfgfile", &sb);
+	stat("/tmp/BIOS.cfgfile", &sb);
 	if (sb.st_size == 0)
 	{
-		//doesn't support scaling Gov this way
-		//lets see if lsb_reease in on here
-		sprintf(aBiosSetting,"lsb_release -d > /tmp/BBIOS.cfgfile");
+		//doesn't support scaling Gov this way - could be Debian - lets try another way
+		sprintf(aBiosSetting,"sudo cpupower frequency-info | grep \"The governor\" > /tmp/BIOS.cfgfile");
 		system(aBiosSetting);
-	
-		biosCfgFPtr = fopen("/tmp/BBIOS.cfgfile","r");
-		while((nread = getline(&line, &len, biosCfgFPtr)) != -1)
-		{ 	//getting CPU speed
-			char *q = strstr(line,"Ubuntu");
-			char *r = strstr(line,"ubuntu");
-
-			if (q || r)
-			{
-				//Debian box
-				printf ("HELLLLLLLLLLLLLLLLLLLLLLOOOOOOOOOOOOOOO\n");
-				fclose(biosCfgFPtr);
-				sprintf(aBiosSetting,"sudo cpupower frequency-info | grep \"The governor\" > /tmp/BBIOS.cfgfile");
-				system(aBiosSetting);
 		
-				biosCfgFPtr = fopen("/tmp/BBIOS.cfgfile","r");
-				while((nread = getline(&line, &len, biosCfgFPtr)) != -1)
+		biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
+		while((nread = getline(&line, &len, biosCfgFPtr)) != -1)
+		{
+			char * g = strstr(line, "The governor");
+			if (g)
+			{
+				int count = 0;
+				g = g + strlen("The governor");
+				while (!isalpha(*g)) g++;
+				while (isalpha(g[count]))
 				{
-					char * g = strstr(line, "The governor");
-					if (g)
-					{
-						int count = 0;
-						g = g + strlen("The governor");
-						while (!isalpha(*g)) g++;
-						while (isalpha(g[count]))
-						{
-							aBiosValue[count] = g[count];
-							count++;
-						}
-						printf("Frequency = *******%s*****\n",aBiosValue);
-						other_way = 1;
-						goto get_freq_other_way;
-					}
+					aBiosValue[count] = g[count];
+					count++;
 				}
+				other_way = 1;
+				goto get_freq_other_way;
 			}
 		}
-		
-		return;
 	}
 
 	biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
+
 get_freq_other_way:
 	if (!biosCfgFPtr)
 	{
