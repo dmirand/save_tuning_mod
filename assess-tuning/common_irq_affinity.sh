@@ -25,6 +25,11 @@
 # notice, one of the license notices in the documentation
 # and/or other materials provided with the distribution.
 #
+# Date Feb 2 2022
+# Modified by DM
+# Changed: (echo "Error - interface or device \"$interface\" does not exist" 1>&2)
+# To:      (echo "Interface or device \"$interface\" has no relevant IRQs" 1>&2)
+#
 
 function add_comma_every_eight
 {
@@ -63,7 +68,7 @@ function get_irq_list
 	elif [ -d $net_device_irqs_path ]; then
 		irq_list=$( /bin/ls $net_device_irqs_path )
 	else 
-		echo "Error - interface or device \"$interface\" does not exist" 1>&2
+		echo "Interface or device \"$interface\" has no relevant IRQs" 1>&2
 		exit 1
 	fi
 	echo $irq_list
