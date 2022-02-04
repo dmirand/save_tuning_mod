@@ -69,6 +69,10 @@ There are a few relevant directories here:
 ```modules```
 -	Contains source for a LKM (Loadable Kernel Module) that can be used for testing the Tuning Module
 
+```cli```
+-	Contains source for a HTTP client that is used as a CLI for sending instructions to
+	or receiving information from the Tuning Module
+
 **To Compile:**
 
 In order to compile and work with the Tuning Module, do the following:
@@ -88,3 +92,5 @@ In order to compile and work with the Tuning Module, do the following:
 -	Run ```make``` in ```testing/``` and use loader to load the bpf file into the kernel
 -	Run ```make``` in ```userspace/``` and start the Tuning Module eg. ```sudo ./user_dtn -d enp6s0```
 	* 	```/tmp/tuningLog``` will contain all the relevant output 
+-	Run ```make``` in ```cli/```. This will create a directory call ```tmp``` which contains the binary ```tuncli```.
+	Run the binary and follow the instructions on how to use it
