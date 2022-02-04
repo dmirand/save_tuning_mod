@@ -22,6 +22,7 @@ USER_OBJ := ${USER_C:.c=.o}
 # Expect this is defined by including Makefile, but define if not
 COMMON_DIR ?= ../common/
 LIBBPF_DIR ?= ../libbpf/src/
+FACILIO_DIR ?= ../facil_io_7.0/
 
 COPY_LOADER ?=
 LOADER_DIR ?= $(COMMON_DIR)/../basic-solutions
@@ -41,6 +42,11 @@ KERN_USER_H ?= $(wildcard common_kern_user.h)
 
 CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -g
 CFLAGS += -I../headers/
+CFLAGS += -I$(FACILIO_DIR)/lib/facil/
+CFLAGS += -I$(FACILIO_DIR)/lib/facil/http
+CFLAGS += -I$(FACILIO_DIR)/lib/facil/fiobj
+CFLAGS += -I$(FACILIO_DIR)/lib/facil/http/parsers
+
 LDFLAGS ?= -L$(LIBBPF_DIR)
 
 BPF_CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -I../headers/
@@ -55,7 +61,7 @@ clean:
 	rm -rf $(LIBBPF_DIR)/build
 	$(MAKE) -C $(LIBBPF_DIR) clean
 	$(MAKE) -C $(COMMON_DIR) clean
-	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ) $(COPY_LOADER) $(COPY_STATS)
+	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ) $(COPY_LOADER) $(COPY_STATS) $(FACILIO_OBJS)
 	rm -f *.ll
 	rm -f *~
 
@@ -103,8 +109,8 @@ $(COMMON_H): %.h: %.c
 $(COMMON_OBJS): %.o: %.h
 	make -C $(COMMON_DIR)
 
-$(USER_TARGETS): %: %.c  $(OBJECT_LIBBPF) Makefile $(COMMON_MK) $(COMMON_OBJS) $(KERN_USER_H) $(EXTRA_DEPS)
-	$(CC) -Wall $(CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) -lpthread \
+$(USER_TARGETS): %: %.c  $(OBJECT_LIBBPF) Makefile $(COMMON_MK) $(COMMON_OBJS) $(FACILIO_OBJS) $(KERN_USER_H) $(EXTRA_DEPS)
+	$(CC) -Wall $(CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) $(FACILIO_OBJS) -lm -lpthread \
 	 $< $(LIBS)
 
 $(XDP_OBJ): %.o: %.c  Makefile $(COMMON_MK) $(KERN_USER_H) $(EXTRA_DEPS) $(OBJECT_LIBBPF)

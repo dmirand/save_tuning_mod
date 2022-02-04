@@ -17,6 +17,12 @@ static const char *__doc__ = "Tuning Module Userspace program\n"
 #include <pthread.h>
 #include <signal.h>
 
+/******HTTP server *****/
+#include "fio.h"
+#include "http.h"
+void initialize_http_service(void);
+/**********************/
+
 #define WORKFLOW_NAMES_MAX	4
 #define USING_PERF_EVENT_ARRAY 1
 #define TEST 1
@@ -59,6 +65,7 @@ void fDoSystemtuning(void);
 void fDo_lshw(void);
 static char *pUserCfgFile = "user_config.txt";
 static int gInterval = 2; //default in seconds
+static int gAPI_listen_port = 5523; //default listening port
 static char gTuningMode = 0;
 static char gApplyBiosTuning = 'n';
 static char gApplyNicTuning = 'n';
@@ -519,6 +526,15 @@ void fDoGetUserCfgValues(void)
 							if (userValues[count].cfg_value[0] == 'y') 
 								gApplyNicTuning = 'y';
 						}
+						else
+							if (strcmp(userValues[count].aUserValues,"API_listen_port") == 0)
+							{
+								int cfg_val = atoi(userValues[count].cfg_value);
+								if (cfg_val == -1) //wasn't set properly
+									gAPI_listen_port = atoi(userValues[count].default_val);
+								else
+									gAPI_listen_port = cfg_val;
+							}
 	}
 
 	gettime(&clk, ctime_buf);
@@ -1454,7 +1470,7 @@ void fDoNicTuning(void)
 	return;
 }
 
-void * fTalkToKernel(void * vargp)
+void * fDoRunTalkToKernel(void * vargp)
 {
 	int result = 0;
 	char aMessage[512];
@@ -1491,6 +1507,97 @@ void * fTalkToKernel(void * vargp)
 	}
 }
 
+/***** HTTP *************/
+void check_req(http_s *h, char aResp[])
+{
+	FIOBJ r = http_req2str(h);
+	time_t clk;
+	char ctime_buf[27];
+	char * pReqData = fiobj_obj2cstr(r).data;
+	
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Received Data from Http Client***\nData is:\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr,"%s", pReqData);
+
+	if (strstr(pReqData,"GET /-t"))
+	{
+		/* TODO: Apply tuning */
+		strcpy(aResp,"Recommended Tuning applied!!!\n");
+	
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to apply recommended Tuning***\n", ctime_buf, phase2str(current_phase));
+		fprintf(tunLogPtr,"%s %s: ***Applying recommended Tuning now***\n", ctime_buf, phase2str(current_phase));
+		/* TODO: Apply tuning */
+	}
+	else
+		{
+			strcpy(aResp,"Received something else!!!\n");
+		
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"%s %s: ***Received some kind of request from Http Client***\n", ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr,"%s %s: ***Applying some kind of request***\n", ctime_buf, phase2str(current_phase));
+		}
+
+
+return;
+}
+
+/* TODO: edit this function to handle HTTP data and answer Websocket requests.*/
+static void on_http_request(http_s *h) 
+{
+	char aTheResp[512];	
+  	check_req(h, aTheResp);
+	/* set the response and send it (finnish vs. destroy). */
+  	http_send_body(h, aTheResp, strlen(aTheResp));
+}
+
+/* starts a listeninng socket for HTTP connections. */
+void initialize_http_service(void) 
+{
+	time_t clk;
+	char ctime_buf[27];
+  	char aListenPort[32];	
+
+	/* listen for inncoming connections */
+	sprintf(aListenPort,"%d",gAPI_listen_port);
+	if (http_listen(aListenPort, NULL, .on_request = on_http_request) == -1) 
+	{
+    		/* listen failed ?*/
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***ERROR: facil couldn't initialize HTTP service (already running?)...***\n", ctime_buf, phase2str(current_phase));
+		return;
+  	}
+#if 0
+  if (http_listen(fio_cli_get("-p"), fio_cli_get("-b"),
+                  .on_request = on_http_request,
+                  .max_body_size = fio_cli_get_i("-maxbd") * 1024 * 1024,
+                  .ws_max_msg_size = fio_cli_get_i("-max-msg") * 1024,
+                  .public_folder = fio_cli_get("-public"),
+                  .log = fio_cli_get_bool("-log"),
+                  .timeout = fio_cli_get_i("-keep-alive"),
+                  .ws_timeout = fio_cli_get_i("-ping")) == -1) {
+    /* listen failed ?*/
+    perror("ERROR: facil couldn't initialize HTTP service (already running?)");
+    exit(1);
+  }
+#endif
+}
+
+void * fDoRunHttpServer(void * vargp)
+{
+	//int * fd = (int *) vargp;
+	time_t clk;
+	char ctime_buf[27];
+
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Starting Http Server ...***\n", ctime_buf, phase2str(current_phase));
+	//catch_sigint();
+	initialize_http_service();
+	/* start facil */
+	fio_start(.threads = 1, .workers = 0);
+	return ;
+}
+
 
 int main(int argc, char **argv) 
 {
@@ -1499,7 +1606,8 @@ int main(int argc, char **argv)
 	int fd; 
 	int vRetFromKernelThread, vRetFromKernelJoin;
 	int vRetFromRunBpfThread, vRetFromRunBpfJoin;
-	pthread_t talkToKernelThread_id, doRunBpfCollectionThread_id;
+	int vRetFromRunHttpServerThread, vRetFromRunHttpServerJoin;
+	pthread_t doRunTalkToKernelThread_id, doRunBpfCollectionThread_id, doRunHttpServerThread_id;
 	sArgv_t sArgv;
 	time_t clk;
 	char ctime_buf[27];
@@ -1544,7 +1652,7 @@ int main(int argc, char **argv)
 
 	if (fd > 0)
 	{
-		vRetFromKernelThread = pthread_create(&talkToKernelThread_id, NULL, fTalkToKernel, &fd);
+		vRetFromKernelThread = pthread_create(&doRunTalkToKernelThread_id, NULL, fDoRunTalkToKernel, &fd);
 	}
 	else
 	{
@@ -1589,11 +1697,18 @@ leave:
 #else //Using Map Type RINGBUF
 	vRetFromRunBpfThread = pthread_create(&doRunBpfCollectionThread_id, NULL, fDoRunBpfCollectionRingBuf, &sArgv);;
 #endif
+
+	//Start Http server Thread	
+	vRetFromRunHttpServerThread = pthread_create(&doRunHttpServerThread_id, NULL, fDoRunHttpServer, &sArgv);
+
 	if (vRetFromKernelThread == 0)
-    	vRetFromKernelJoin = pthread_join(talkToKernelThread_id, NULL);
+    		vRetFromKernelJoin = pthread_join(doRunTalkToKernelThread_id, NULL);
 
 	if (vRetFromRunBpfThread == 0)
-    	vRetFromRunBpfJoin = pthread_join(doRunBpfCollectionThread_id, NULL);
+    		vRetFromRunBpfJoin = pthread_join(doRunBpfCollectionThread_id, NULL);
+	
+	if (vRetFromRunHttpServerThread == 0)
+    		vRetFromRunHttpServerJoin = pthread_join(doRunHttpServerThread_id, NULL);
 
 	if (fd > 0)
 		close(fd);
