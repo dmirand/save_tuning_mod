@@ -10,20 +10,12 @@
 #include <getopt.h>
 #include <time.h>
 
+#include "user_dtn.h"
+
 #ifndef  uint32_t
 typedef unsigned int uint32_t;
 #endif
 
-#define WORKFLOW_NAMES_MAX	4
-
-static void gettime(time_t *clk, char *ctime_buf) 
-{
-	*clk = time(NULL);
-	ctime_r(clk,ctime_buf);
-	ctime_buf[24] = ':';
-}
-
-FILE * tunLogPtr = 0;
 void fDoGetUserCfgValues(void);
 int fCheckInterfaceExists();
 void fDoGetDeviceCap(void);
@@ -32,29 +24,22 @@ void fDoNicTuning(void);
 void fDoSystemtuning(void);
 void fDo_lshw(void);
 
-static int gInterval = 2; //default
-static int netDeviceSpeed = 0;
-static int numaNode = 0;
+int gInterval = 2; //default
+int gAPI_listen_port = 5523; //default listening port
+int netDeviceSpeed = 0;
+int numaNode = 0;
 
-static char *pUserCfgFile = "user_config.txt";
-static char gTuningMode = 0;
-static char gApplyBiosTuning = 'n';
-static char gApplyNicTuning = 'n';
-static char gApplyDefSysTuning = 'n';
-static char gMakeTuningPermanent = 'n';
-static char netDevice[128];
-static char vHaveNetDevice = 0;
+char *pUserCfgFile = "user_config.txt";
+char gTuningMode = 0;
+char gApplyBiosTuning = 'n';
+char gApplyNicTuning = 'n';
+char gApplyDefSysTuning = 'n';
+char gMakeTuningPermanent = 'n';
+//char vHaveNetDevice = 0;
 
-enum workflow_phases {
-	STARTING,
-	ASSESSMENT,
-	LEARNING,
-	TUNING,
-};
+enum workflow_phases current_phase = STARTING;
 
-static enum workflow_phases current_phase = STARTING;
-
-static const char *workflow_names[WORKFLOW_NAMES_MAX] = {
+const char *workflow_names[WORKFLOW_NAMES_MAX] = {
 	"STARTING",
 	"ASSESSMENT",
 	"LEARNING",
@@ -194,7 +179,16 @@ void fDoGetUserCfgValues(void)
 								if (userValues[count].cfg_value[0] == 'y') 
 									gMakeTuningPermanent = 'y';
 							}
-		}
+							else
+								if (strcmp(userValues[count].aUserValues,"API_listen_port") == 0)
+								{
+									int cfg_val = atoi(userValues[count].cfg_value);
+									if (cfg_val == -1) //wasn't set properly
+										gAPI_listen_port = atoi(userValues[count].default_val);
+									else
+										gAPI_listen_port = cfg_val;
+								}
+	}
 
 	gettime(&clk, ctime_buf);
 	//fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d***\n", ctime_buf, gInterval);
@@ -850,14 +844,8 @@ void fDoCpuPerformance()
 	if (sb.st_size == 0)
 	{
 		//doesn't support scaling Gov this way - could be Debian - lets try another way
-		sprintf(aBiosSetting,"sudo cpupower frequency-info | grep \"The governor\" > /tmp/BIOS.cfgfile 2>/dev/null");
+		sprintf(aBiosSetting,"sudo cpupower frequency-info | grep \"The governor\" > /tmp/BIOS.cfgfile");
 		system(aBiosSetting);
-		
-		stat("/tmp/BIOS.cfgfile", &sb);
-		if (sb.st_size == 0) 
-		{ //again - doesn't have values available
-			goto unable_to_det;
-		}
 		
 		biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
 		while((nread = getline(&line, &len, biosCfgFPtr)) != -1)
@@ -877,9 +865,6 @@ void fDoCpuPerformance()
 				goto get_freq_other_way;
 			}
 		}
-		
-		if (!other_way) //just in case - should not happen!!!
-			goto unable_to_det;
 	}
 
 	biosCfgFPtr = fopen("/tmp/BIOS.cfgfile","r");
@@ -941,22 +926,6 @@ get_freq_other_way:
 		free(line);
 
 	return;
-
-unable_to_det:
-	vPad = SETTINGS_PAD_MAX-(strlen("CPU Governor"));
-	fprintf(tunLogPtr,"%s", "CPU Governor"); //redundancy for visual
-        fprintf(tunLogPtr,"%*s", vPad, "not available");
-        fprintf(tunLogPtr,"%26s %20s\n", "not available", "na");
-	
-	if (line)
-		free(line);
-
-	if (biosCfgFPtr)
-		fclose(biosCfgFPtr);
-
-        system("rm -f /tmp/BIOS.cfgfile"); //remove file after use
-
-        return;
 }
 
 void fDoIrqBalance()
@@ -2024,61 +1993,27 @@ void fDoNicTuning(void)
 	return;
 }
 
-int main(int argc, char **argv) 
+int user_assess(int argc, char **argv) 
 {
 
 	time_t clk;
 	char ctime_buf[27];
 
-	tunLogPtr = fopen("/tmp/tuningLog","w");
-	if (!tunLogPtr)
-	{
-		printf("Could not open tuning Logfile, exiting...\n");
-		exit(-1);
-	}
-
-	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, "%s %s: tuning Log opened***\n", ctime_buf, phase2str(current_phase));
-
-	if (argc == 2)
-	{
-		int vRet;
-		strcpy(netDevice,argv[1]);
-		vRet = fCheckInterfaceExist();
-		if (!vRet)
-		{
-			vHaveNetDevice = 1;
-			fprintf(tunLogPtr, "%s %s: Found Device %s***\n", ctime_buf, phase2str(current_phase), argv[1]);
-		}
-		else
-		{
-			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr, "%s %s: Device not found, Invalid device name *%s*, Exiting...***\n", ctime_buf, phase2str(current_phase), argv[1]);
-			exit(-1);
-		}
-
-	}
-	else
-		{
-			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr, "%s %s: Device name not supplied, Will just tune kernel ***\n", ctime_buf, phase2str(current_phase));
-		}
-
-	gettime(&clk, ctime_buf);
 	current_phase = ASSESSMENT;
+	gettime(&clk, ctime_buf);
+
+	fprintf(tunLogPtr, "%s %s: Found Device %s***\n", ctime_buf, phase2str(current_phase), netDevice);
+
+	gettime(&clk, ctime_buf);
 
 	fDoGetUserCfgValues();
 
-	if (vHaveNetDevice)
-	{
-		fDoGetDeviceCap();
-		numaNode = fDoGetNuma();
-	}
+	fDoGetDeviceCap();
+	numaNode = fDoGetNuma();
 
 	fDoSystemTuning();
 
-	if (argc == 2)
-		fDoNicTuning();
+	fDoNicTuning();
 
 	fDoBiosTuning();
 
@@ -2164,9 +2099,6 @@ int main(int argc, char **argv)
 	}
 
 leave:
-	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, "%s %s: Closing tuning Log***\n", ctime_buf, phase2str(current_phase));
-	fclose(tunLogPtr);
 return 0;
 }
 

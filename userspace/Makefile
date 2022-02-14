@@ -9,6 +9,8 @@ FACILIO_DIR = ../facil_io_7.0/
 # Extend with another COMMON_OBJS
 COMMON_OBJS += $(COMMON_DIR)/common_libbpf.o
 
+OTHER_OBJS = ./user_assess.o
+
 FACILIO_OBJS += $(FACILIO_DIR)/lib/facil/fio.o
 FACILIO_OBJS += $(FACILIO_DIR)/lib/facil/fiobj/fiobj_hash.o
 FACILIO_OBJS += $(FACILIO_DIR)/lib/facil/fiobj/fiobj_ary.o
