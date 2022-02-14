@@ -61,7 +61,7 @@ clean:
 	rm -rf $(LIBBPF_DIR)/build
 	$(MAKE) -C $(LIBBPF_DIR) clean
 	$(MAKE) -C $(COMMON_DIR) clean
-	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ) $(COPY_LOADER) $(COPY_STATS) $(FACILIO_OBJS)
+	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ) $(COPY_LOADER) $(COPY_STATS) $(OTHER_OBJS) $(FACILIO_OBJS)
 	rm -f *.ll
 	rm -f *~
 
@@ -109,8 +109,8 @@ $(COMMON_H): %.h: %.c
 $(COMMON_OBJS): %.o: %.h
 	make -C $(COMMON_DIR)
 
-$(USER_TARGETS): %: %.c  $(OBJECT_LIBBPF) Makefile $(COMMON_MK) $(COMMON_OBJS) $(FACILIO_OBJS) $(KERN_USER_H) $(EXTRA_DEPS)
-	$(CC) -Wall $(CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) $(FACILIO_OBJS) -lm -lpthread \
+$(USER_TARGETS): %: %.c  $(OBJECT_LIBBPF) Makefile $(COMMON_MK) $(COMMON_OBJS) $(OTHER_OBJS) $(FACILIO_OBJS) $(KERN_USER_H) $(EXTRA_DEPS)
+	$(CC) -Wall $(CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) $(OTHER_OBJS) $(FACILIO_OBJS) -lm -lpthread \
 	 $< $(LIBS)
 
 $(XDP_OBJ): %.o: %.c  Makefile $(COMMON_MK) $(KERN_USER_H) $(EXTRA_DEPS) $(OBJECT_LIBBPF)
