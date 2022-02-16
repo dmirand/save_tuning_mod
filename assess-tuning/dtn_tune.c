@@ -31,6 +31,7 @@ void fDoBiosTuning(void);
 void fDoNicTuning(void);
 void fDoSystemtuning(void);
 void fDo_lshw(void);
+int fCheckForNicsAndSpeeds();
 
 static int gInterval = 2; //default
 static int netDeviceSpeed = 0;
@@ -66,6 +67,283 @@ const char *phase2str(enum workflow_phases phase)
 	if (phase < WORKFLOW_NAMES_MAX)
 		return workflow_names[phase];
 	return NULL;
+}
+
+int fCheckForNicsAndSpeeds()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[256];
+	FILE *nicCfgFPtr = 0;
+	int tmpSpeed = 0;
+	int v10G = 0;
+	int v40G = 0;
+	int v100G = 0;
+
+	gettime(&clk, ctime_buf);
+	sprintf(aNicSetting,"cat /sys/class/net/*/speed > /tmp/NIC.cfgfile 2>/dev/null");
+	system(aNicSetting);
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{ 
+				char sValue[256];
+				int cfg_val = 0;
+				strcpy(sValue,line);
+				if (sValue[strlen(sValue)-1] == '\n')
+					sValue[strlen(sValue)-1] = 0;
+
+				cfg_val = atoi(sValue);
+				if (cfg_val == 0) //wasn't set properly
+				{
+					int save_errno = errno;
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr,"%s %s: Value for speed is invalid, value is %s, errno = %d...\n", ctime_buf, phase2str(current_phase), sValue, save_errno);
+				}
+				else
+					{
+						if (cfg_val >= tmpSpeed)
+							tmpSpeed = cfg_val;
+						
+						if (cfg_val <= 10000) //10G
+							v10G++;
+						else
+							if (cfg_val < 100000) //100G
+								v40G++;
+							else
+								v100G++;
+				
+					}
+			}
+
+			if (v10G && v40G && v100G)
+			{
+				char *buffer = NULL;
+				ssize_t read;
+				size_t len;
+
+				printf("\n\tYou have NIC cards with <=10G, 40G and 100G speeds\n");
+				printf("\tMake a selection from below\n\n");
+				printf("\t1) Tune the system as a 10G Server\n");
+				printf("\t2) Tune the system as a 40G Server\n");
+				printf("\t3) Tune the system as a 100G Server\n");
+				printf("\tPlease Enter 1, 2, or 3: ");
+				while((read = getline(&buffer, &len, stdin)) != -1)
+				{
+					if (buffer[0] == '1')
+					{
+						tmpSpeed = 10000;
+						break;
+					}
+					else
+						if (buffer[0] == '2')
+						{
+							tmpSpeed = 40000;
+							break;
+						}
+						else
+							if (buffer[0] == '3')
+							{
+								tmpSpeed = 100000;
+								break;
+							}
+							else
+								{
+									system("clear");
+									printf("\n\tYou have NIC cards with <=10G, 40G and 100G speeds\n");
+									printf("\tMake a selection from below\n\n");
+									printf("\t1) Tune the system as a 10G Server\n");
+									printf("\t2) Tune the system as a 40G Server\n");
+									printf("\t3) Tune the system as a 100G Server\n");
+									printf("\tPlease Enter 1, 2, or 3: ");
+								}
+				}
+					
+				if (read == -1)
+					printf("\nNo line read...\n");
+				else
+					printf("\n");
+			
+				free(buffer);
+			}
+			else
+				if (v40G && v100G)
+				{
+					char *buffer = NULL;
+					ssize_t read;
+					size_t len;
+				
+					printf("\n\tYou have NIC cards with 40G and 100G speeds\n");
+					printf("\tMake a selection from below\n\n");
+					printf("\t1) Tune the system as a 40G Server\n");
+					printf("\t2) Tune the system as a 100G Server\n");
+					printf("\tPlease Enter 1 or 2\n");
+					while((read = getline(&buffer, &len, stdin)) != -1)
+					{
+						if (buffer[0] == '1')
+						{
+							tmpSpeed = 40000;
+							break;
+						}
+						else
+							if (buffer[0] == '2')
+							{
+								tmpSpeed = 100000;
+								break;
+							}
+							else
+								{
+									system("clear");
+									printf("\n\tYou have NIC cards with 40G and 100G speeds\n");
+									printf("\tMake a selection from below\n\n");
+									printf("\t1) Tune the system as a 40G Server\n");
+									printf("\t2) Tune the system as a 100G Server\n");
+									printf("\tPlease Enter 1 or 2: ");
+								}
+					}
+						
+					if (read == -1)
+						printf("\nNo line read...\n");
+					else
+						printf("\n");
+				
+					free(buffer);
+				}
+				else
+					if (v10G && v100G)
+					{
+						char *buffer = NULL;
+						ssize_t read;
+						size_t len;
+					
+						printf("\n\tYou have NIC cards with <=10G and 100G speeds\n");
+						printf("\tMake a selection from below\n\n");
+						printf("\t1) Tune the system as a 10G Server\n");
+						printf("\t2) Tune the system as a 100G Server\n");
+						printf("\tPlease Enter 1 or 2: ");
+						while((read = getline(&buffer, &len, stdin)) != -1)
+						{
+							if (buffer[0] == '1')
+							{
+								tmpSpeed = 10000;
+								break;
+							}
+							else
+								if (buffer[0] == '2')
+								{
+									tmpSpeed = 100000;
+									break;
+								}
+								else
+									{
+										system("clear");
+										printf("\n\tYou have NIC cards with <=10G and 100G speeds\n");
+										printf("\tMake a selection from below\n\n");
+										printf("\t1) Tune the system as a 10G Server\n");
+										printf("\t2) Tune the system as a 100G Server\n");
+										printf("\tPlease Enter 1 or 2: ");
+									}
+						}
+
+						if (read == -1)
+							printf("\nNo line read...\n");
+						else
+							printf("\n");
+
+						free(buffer);
+					}
+					else
+						if (v10G && v40G)
+						{
+							char *buffer = NULL;
+							ssize_t read;
+							size_t len;
+
+							printf("\n\tYou have NIC cards with <=10G and 40G speeds\n");
+							printf("\tMake a selection from below\n\n");
+							printf("\t1) Tune as a 10G Server\n");
+							printf("\t2) Tune as a 40G Server\n");
+							printf("\tPlease Enter 1 or 2: ");
+							while((read = getline(&buffer, &len, stdin)) != -1)
+							{
+								if (buffer[0] == '1')
+								{
+									tmpSpeed = 10000;
+									break;
+								}
+								else
+									if (buffer[0] == '2')
+									{
+										tmpSpeed = 40000;
+										break;
+									}
+									else
+										{
+											system("clear");
+											printf("\n\tYou have NIC cards with <=10G and 40G speeds\n");
+											printf("\tMake a selection from below\n\n");
+											printf("\t1) Tune as a 10G Server\n");
+											printf("\t2) Tune as a 40G Server\n");
+											printf("\tPlease Enter 1 or 2: ");
+										}
+							}
+
+							if (read == -1)
+								printf("\nNo line read...\n");
+							else
+								printf("\n");
+							
+							free(buffer);
+						}
+						else
+							if (v100G)
+							{
+								system("clear");
+								printf("\n\tYou only have NIC cards with 100G speeds\n");
+								printf("\tWill tune as a 100G system\n");
+							}
+							else
+								if ( v40G)
+								{
+									system("clear");
+									printf("\n\tYou only have NIC cards with 40G speeds\n");
+									printf("\tWill tune as a 40G system\n");
+								}
+								else
+									if ( v10G)
+									{
+										system("clear");
+										printf("\n\tYou only have NIC cards with 10G speeds or less\n");
+										printf("\tWill tune as a 10G system\n");
+									}
+									else
+										{
+											system("clear");
+											printf("\n\tTuning system as a 10G Server\n");
+											tmpSpeed = 10000;	
+										}
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		}
+
+	if (line)
+		free(line);
+
+	//gettime(&clk, ctime_buf);
+	//fprintf(tunLogPtr,"%s %s: Highest NIC speed is %d...\n", ctime_buf, phase2str(current_phase), tmpSpeed);
+
+return tmpSpeed;
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
@@ -1542,7 +1820,7 @@ void fDoLRO()
 	int fixed = 0;
 	char * recommended_val = "on";
 
-	sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload > /tmp/NIC.cfgfile",netDevice);
+	sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
 	system(aNicSetting);
     
 	stat("/tmp/NIC.cfgfile", &sb);
@@ -1553,14 +1831,14 @@ void fDoLRO()
 	}
 	else
 		{
-			sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload | grep fixed > /tmp/NIC.cfgfile",netDevice);
+			sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload | grep fixed > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
 			system(aNicSetting);
 	
 			stat("/tmp/NIC.cfgfile", &sb);
 			if (sb.st_size == 0) //not fixed
 			{
 				//do it again to get the truth
-				sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload > /tmp/NIC.cfgfile",netDevice);
+				sprintf(aNicSetting,"ethtool --show-features %s | grep large-receive-offload > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
 				system(aNicSetting);
 
 			}
@@ -1609,13 +1887,13 @@ void fDoLRO()
 					if (gApplyNicTuning == 'y')
 					{
 						//Apply Initial DefSys Tuning
-						sprintf(aNicSetting,"ethtool -K %s lro %s", netDevice, recommended_val);
+						sprintf(aNicSetting,"ethtool -K %s lro %s 2>/dev/null", netDevice, recommended_val);
 						system(aNicSetting);
 					}
 					else
 						{
 							//Save in Case Operator want to apply from menu
-							sprintf(aNicSetting,"ethtool -K %s lro %s", netDevice, recommended_val);
+							sprintf(aNicSetting,"ethtool -K %s lro %s 2>/dev/null", netDevice, recommended_val);
 							memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
 							aApplyNicDefTunCount++;
 						}
@@ -2062,6 +2340,26 @@ int main(int argc, char **argv)
 		{
 			gettime(&clk, ctime_buf);
 			fprintf(tunLogPtr, "%s %s: Device name not supplied, Will just tune kernel ***\n", ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr, "%s %s: Will check NIC speeds on the system to apply tuning ***\n", ctime_buf, phase2str(current_phase));
+			fflush(tunLogPtr);
+			netDeviceSpeed = fCheckForNicsAndSpeeds(); //simulated since no NIC specified
+			switch(netDeviceSpeed) 
+			{
+				case 10000:
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr, "%s %s: Will tune as a 10G system ***\n", ctime_buf, phase2str(current_phase));
+					break;
+				case 40000:
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr, "%s %s: Will tune as a 40G system ***\n", ctime_buf, phase2str(current_phase));
+					break;
+				case 100000:
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr, "%s %s: Will tune as a 100G system ***\n", ctime_buf, phase2str(current_phase));
+					break;
+				default:
+					break;
+			}
 		}
 
 	gettime(&clk, ctime_buf);
