@@ -1412,7 +1412,7 @@ void fDoGetDeviceCap(void)
 	FILE *nicCfgFPtr = 0;
 
 	gettime(&clk, ctime_buf);
-	sprintf(aNicSetting,"cat /sys/class/net/%s/speed > /tmp/NIC.cfgfile",netDevice);
+	sprintf(aNicSetting,"cat /sys/class/net/%s/speed > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
 	system(aNicSetting);
 
 	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
