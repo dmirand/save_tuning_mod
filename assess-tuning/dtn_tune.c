@@ -778,11 +778,11 @@ void fDoSystemTuning(void)
 				len = (r-q) + 1;
 				strncpy(value,q,len);
 				value[--len] = 0;
-	
+				
 				if(isdigit(value[0]))
 				{
 					intvalue = atoi(value);
-					if(intvalue <= aTuningNumsToUse[count].minimum)
+					if((intvalue <= aTuningNumsToUse[count].minimum) || (aTuningNumsToUse[count].xDefault != -1))
 					{
 						if (aTuningNumsToUse[count].xDefault == -1) //only one value
 						{
@@ -860,6 +860,20 @@ void fDoSystemTuning(void)
 								}
 #define SETTINGS_PAD_MAX2 43
 								vPad = SETTINGS_PAD_MAX2-(strlen(min) + strlen(def) + strlen(max));
+								{
+									int vPadStrLen;
+									int vPadAbs;
+									char strValmin[128];
+									char strValdef[128];
+									int total;
+									int y = sprintf(strValmin,"%d",aTuningNumsToUse[count].minimum);
+									total = y;
+									y = sprintf(strValdef,"%d",aTuningNumsToUse[count].xDefault);
+									total += y;
+									vPadStrLen = strlen(min) + strlen(def);
+									vPadAbs = abs(vPadStrLen - total);
+									vPad += vPadAbs;
+								}
 								fprintf(tunLogPtr,"%*s %s %s", vPad, min, def, max);	
 								currmax = atoi(max);
 #define SETTINGS_PAD_MAX3 28
@@ -916,9 +930,11 @@ void fDoSystemTuning(void)
 								fprintf(tunLogPtr,"%*s", vPad, value);
 								fprintf(tunLogPtr,"%26d %20s\n",aTuningNumsToUse[count].minimum, "na");
 							}
+#if 0
 							else
 								{//has min, default and max values - get them...
 								 //Let's parse the value stringand get the min, etc. separately
+								 //let get the max value too
 									int i, j;
 									char min[256];
 									char def[256];
@@ -974,6 +990,7 @@ void fDoSystemTuning(void)
 										fprintf(tunLogPtr,"%*s %s %s %20s\n", vPad, strValmin, strValdef, strValmax, "na");
 									}
 								}
+#endif
 						}
 #if 0
 					else //Leaving out this case for now
