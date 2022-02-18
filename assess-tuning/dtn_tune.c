@@ -2324,6 +2324,7 @@ int main(int argc, char **argv)
 
 	time_t clk;
 	char ctime_buf[27];
+	int vExitValue = 0;
 
 	tunLogPtr = fopen("/tmp/tuningLog","w");
 	if (!tunLogPtr)
@@ -2342,14 +2343,26 @@ int main(int argc, char **argv)
 		vRet = fCheckInterfaceExist();
 		if (!vRet)
 		{
+			int vSpeedInGb;
 			vHaveNetDevice = 1;
 			fprintf(tunLogPtr, "%s %s: Found Device %s***\n", ctime_buf, phase2str(current_phase), argv[1]);
+			fDoGetDeviceCap(); //Will set netDeviceSpeed if device is UP
+			vSpeedInGb = netDeviceSpeed/1000; //Should become zero if invalid speed (0 or -1)
+			if (!vSpeedInGb)
+			{
+				fprintf(tunLogPtr, "%s %s: Device *%s* link is probably DOWN as its speed in invalid.***\n", ctime_buf, phase2str(current_phase), argv[1]);
+				fprintf(tunLogPtr, "%s %s: Please use a device whose link is UP. Exiting...***\n", ctime_buf, phase2str(current_phase));
+				fflush(tunLogPtr);
+				vExitValue = -3;
+				goto leave;
+			}
 		}
 		else
 		{
 			gettime(&clk, ctime_buf);
 			fprintf(tunLogPtr, "%s %s: Device not found, Invalid device name *%s*, Exiting...***\n", ctime_buf, phase2str(current_phase), argv[1]);
-			exit(-1);
+			vExitValue = -1;
+			goto leave;
 		}
 
 	}
@@ -2386,7 +2399,6 @@ int main(int argc, char **argv)
 
 	if (vHaveNetDevice)
 	{
-		fDoGetDeviceCap();
 		numaNode = fDoGetNuma();
 	}
 
@@ -2482,6 +2494,6 @@ leave:
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: Closing tuning Log***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunLogPtr);
-return 0;
+return vExitValue;
 }
 
