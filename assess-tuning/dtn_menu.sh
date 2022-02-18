@@ -264,7 +264,7 @@ Usage:\\t[sudo ./dtnmenu]\\t\\t- Configure Tunables \\n\
 		clear_screen
 		printf '\n\n\t%s\n\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s\n\t%s' \
 			"DTN Tuning Utility" \
-			"1) Run DTN Tune" \
+			"1) Run DTN Tune Assessment" \
 			"2) Apply Recommended Kernel Tuning Values Only" \
 			"3) Apply Recommended BIOS Tuning Values Only" \
 			"4) Apply Recommended NIC Tuning Values Only" \
