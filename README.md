@@ -49,9 +49,11 @@ There are also two relevant directories here:
 **This package has been tested with the following versions of Linux**
 -	CentOS 7 ```*Kernels 3.10 and 5.4*```
 -	CentOS 8 ```*Kernel 8.4*```
--	Ubuntu 18.4 
+-	Ubuntu 16.04 LTS ```*Kernel 4.15.0-142-generic*```
+-	Ubuntu 18.04 LTS ```*Kernel 4.15.0-112-generic, 4.15.0-167-generic*```
 -	Ubuntu 21.04 and Ubuntu 20.04 LTS ```*Kernel 5.11*```
--	Debian 9, 10, and 11
+-	Debian 9 and 11
+-	Debian 10 VM server ```*Kernel 4.19.0-18-amd64*```
 
 **Part 2**
 
