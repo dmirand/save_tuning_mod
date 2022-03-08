@@ -42,6 +42,8 @@ static int tuning_release(struct inode*, struct file*);
 static ssize_t tuning_read(struct file*, char*, size_t, loff_t*);
 static ssize_t tuning_write(struct file*, const char*, size_t, loff_t*);
 
+extern unsigned long avenrun[];         /* Load averages */
+
 static struct file_operations fops = {
 	.open = tuning_open,
 	.read = tuning_read,
@@ -92,7 +94,7 @@ int Process_Event_From_Collector(void)
 	y = x % 8000; /* print from 0 to 7999 */
 	TuningModule_Wrapper_Sleep(y);
 	down(&readlock);
-	sprintf(writetest,"***Processed event from Kernel*** %ld:%ld", count,y);
+	sprintf(writetest,"***Processed event from Kernel*** %ld:%ld, %ld.%03ld", count,y, (avenrun[0] >> 11), ((avenrun[0] & ((1 << 11) - 1)) * 1000) >> 11);
 	up(&readlock);
 
 	return 0;
