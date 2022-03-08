@@ -15,8 +15,7 @@ This repo is comprised of basically two parts:
 
 **Part 1**
 
-There are two known dependencies at this point. 
--	This package requires 'lshw' and 'dmidecode' utilities to be installed on the system
+There are no known dependencies at this point. 
 
 There are also two relevant directories here:
 
@@ -57,8 +56,8 @@ There are also two relevant directories here:
 
 **Part 2**
 
-There are two known dependencies, apart from compilation requirements at this point. 
--	This package requires 'lshw' and 'dmidecode' utilities to be installed on the system
+There is one known dependency, apart from compilation requirements at this point. 
+-	This package requires the 'bpftrace' utility to be installed on the system
 
 There are a few relevant directories here:
 
