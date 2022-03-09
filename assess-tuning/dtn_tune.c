@@ -36,6 +36,8 @@ int fCheckForNicsAndSpeeds();
 static int gInterval = 2; //default
 static int netDeviceSpeed = 0;
 static int numaNode = 0;
+static int netDevice_rx_ring_buff_cfg_max_val = 0;
+static int netDevice_tx_ring_buff_cfg_max_val = 0;
 
 static char *pUserCfgFile = "user_config.txt";
 static char gTuningMode = 0;
@@ -1750,21 +1752,35 @@ void fDoRingBufferSize()
 								fprintf(tunLogPtr,"%s", "ring_buffer_RX"); //redundancy for visual
 								fprintf(tunLogPtr,"%*s", vPad, sRXCURRValue);
 
+								netDevice_rx_ring_buff_cfg_max_val = cfg_max_val;
 								if (cfg_max_val > cfg_cur_val)
 								{
-									fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
-									if (gApplyNicTuning == 'y')
+									if (netDeviceSpeed < 100000) //less than 100 Gb/s and greater than 10 Gb/s
 									{
-										//Apply Initial DefSys Tuning
-										sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
-										system(aNicSetting);
+										fprintf(tunLogPtr,"%26d %20s\n", cfg_cur_val, "na"); //leave alone for now
 									}
 									else
 										{
-											//Save in Case Operator want to apply from menu
-											sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
-											memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
-											aApplyNicDefTunCount++;
+											if ((cfg_max_val > 8192) && (cfg_cur_val < 8192))
+												cfg_max_val = 8192; //don't go above that for now on 100G
+											
+											if ((cfg_max_val > 8192) && (cfg_cur_val > 8192))
+												cfg_max_val = cfg_cur_val; //don't go above that for now on 100G
+
+											fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
+											if (gApplyNicTuning == 'y')
+											{
+												//Apply Initial DefSys Tuning
+												sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
+												system(aNicSetting);
+											}
+											else
+												{
+													//Save in Case Operator want to apply from menu
+													sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
+													memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+													aApplyNicDefTunCount++;
+												}
 										}
 								}
 								else
@@ -1777,21 +1793,35 @@ void fDoRingBufferSize()
 								fprintf(tunLogPtr,"%s", "ring_buffer_TX"); //redundancy for visual
 								fprintf(tunLogPtr,"%*s", vPad, sTXCURRValue);
 
+								netDevice_tx_ring_buff_cfg_max_val = cfg_max_val;
 								if (cfg_max_val > cfg_cur_val)
 								{
-									fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
-									if (gApplyNicTuning == 'y')
+									if (netDeviceSpeed < 100000) //less than 100 Gb/s and greater than 10 Gb/s
 									{
-										//Apply Initial DefSys Tuning
-										sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
-										system(aNicSetting);
+										fprintf(tunLogPtr,"%26d %20s\n", cfg_cur_val, "na");
 									}
 									else
-										{
-											//Save in Case Operator want to apply from menu
-											sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
-											memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
-											aApplyNicDefTunCount++;
+										{	
+											if ((cfg_max_val > 8192) && (cfg_cur_val < 8192))
+												cfg_max_val = 8192; //don't go above that for now on 100G
+											
+											if ((cfg_max_val > 8192) && (cfg_cur_val > 8192))
+												cfg_max_val = cfg_cur_val; //don't go above that for now on 100G
+
+											fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
+											if (gApplyNicTuning == 'y')
+											{
+												//Apply Initial DefSys Tuning
+												sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
+												system(aNicSetting);
+											}
+											else
+												{
+													//Save in Case Operator want to apply from menu
+													sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
+													memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+													aApplyNicDefTunCount++;
+												}
 										}
 								}
 								else
