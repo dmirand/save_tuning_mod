@@ -1976,7 +1976,7 @@ void fDoNicTuning(void)
 	fDoMTU();
 	fDoTcQdiscFq();
 	fDoFlowControl();
-	fDoIrqAffinity();
+	//fDoIrqAffinity(); //Skip IRQ affinity for now
 
 /*
  * ethtool -i enoX gives bus info

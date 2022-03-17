@@ -57,6 +57,7 @@ int msleep(long msec)
 }
 
 char netDevice[128];
+static unsigned long rx_bits_per_sec = 0, tx_bits_per_sec = 0;
 
 #define SIGINT_MSG "SIGINT received.\n"
 void sig_int_handler(int signum, siginfo_t *info, void *ptr)
@@ -497,9 +498,137 @@ void * fDoRunHttpServer(void * vargp)
 	initialize_http_service();
 	/* start facil */
 	fio_start(.threads = 1, .workers = 0);
-	return ;
+	return ((char *)0);
 }
 
+void * fDoRunGetThresholds(void * vargp)
+{
+	//int * fd = (int *) vargp;
+	time_t clk;
+	char ctime_buf[27];
+
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Starting Check Threshold thread ...***\n", ctime_buf, phase2str(current_phase));
+	char buffer[128];
+	FILE *pipe;
+	int before = 0;
+	int now = 0;
+	time_t secs_passed = 1;
+	unsigned long rx_before, rx_now, rx_bytes_tot;
+	unsigned long tx_before, tx_now, tx_bytes_tot;
+	char try[1024];
+	int stage = 0;
+
+	rx_before =  rx_now = rx_bytes_tot = rx_bits_per_sec = 0;
+	tx_before =  tx_now =  tx_bytes_tot = tx_bits_per_sec = 0;
+	sprintf(try,"bpftrace -e \'BEGIN { @name;} kfunc:dev_get_stats { $nd = (struct net_device *) args->dev; @name = $nd->name; } kretfunc:dev_get_stats /@name == \"%s\"/ { $nd = (struct net_device *) args->dev; $rtnl = (struct rtnl_link_stats64 *) args->storage; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%S");
+	/*sprintf(try,"bpftrace -e \'BEGIN { @name;} kfunc:dev_get_stats { $nd = (struct net_device *) args->dev; @name = $nd->name; } kretfunc:dev_get_stats /@name == \"%s\"/ { $nd = (struct net_device *) args->dev; $rtnl = (struct rtnl_link_stats64 *) args->storage; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");*/
+
+start:
+	secs_passed = 0;
+	//before = time((time_t *)0);
+	pipe = popen(try,"r");
+	if (!pipe)
+	{
+		printf("popen failed!\n");
+		return ((char *) 0);
+	}
+	// read for 2 lines of process:
+	while (!feof(pipe))
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 128, pipe) != NULL);
+		else
+			{
+				printf("Not working****\n");
+				return ((char *) 0);
+			}
+
+ 		if (fgets(buffer, 128, pipe) != NULL)
+		{
+			sscanf(buffer,"%lu %lu", &tx_before, &rx_before);
+			fgets(buffer, 128, pipe);
+			sscanf(buffer,"%d", &before);
+			pclose(pipe);
+
+			sleep(1);
+			pipe = popen(try,"r");
+			if (!pipe)
+			{
+				printf("popen failed!\n");
+				return ((char *) 0);
+			}
+			//now = time((time_t *)0);
+			stage = 1;
+			break;
+		}
+		else
+			{
+				printf("Not working****\n");
+				return ((char *) 0);
+			}
+	}
+
+	while (!feof(pipe) && stage)
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 128, pipe) != NULL);
+		else
+			{
+				printf("Not working****\n");
+				return ((char *) 0);
+			}
+		if (fgets(buffer, 128, pipe) != NULL)
+		{
+			sscanf(buffer,"%lu %lu", &tx_now, &rx_now);
+			fgets(buffer, 128, pipe);
+			sscanf(buffer,"%d", &now);
+
+			tx_bytes_tot =  tx_now - tx_before;
+			rx_bytes_tot =  rx_now - rx_before;
+
+			if (now < before) //seconds started over
+			{
+				secs_passed = (60 - before) + now;
+			}
+			else
+				secs_passed = now - before;
+
+			if (!secs_passed) 
+				secs_passed = 1;;
+#if 1
+			tx_bits_per_sec = ((8 * tx_bytes_tot) / 1024) / secs_passed;
+			rx_bits_per_sec = ((8 * rx_bytes_tot) / 1024) / secs_passed;;
+			printf("TX %s: %lu kb/s RX %s: %lu kb/s, secs_passed %lu\n", netDevice, tx_bits_per_sec, netDevice, rx_bits_per_sec, secs_passed);
+
+			pclose(pipe);
+			break;
+}
+#else
+			tx_bits_per_sec = ((tx_bytes_tot) / 1024) / secs_passed; //really bytes per sec
+			rx_bits_per_sec = ((rx_bytes_tot) / 1024) / secs_passed; //really bytes per sec
+			printf("RX eno2: %lu KB/s TX eno2: %lu KB/s\n", rx_bits_per_sec, tx_bits_per_sec);
+			pclose(pipe);
+			stage = 0;
+			break;
+#endif
+			else
+				{
+					printf("Not working****\n");
+					return ((char *) 0);
+				}
+		}
+
+		if (stage)
+		{
+			stage = 0;
+			goto start;
+		}
+
+		printf("Problems*** stage not set...\n");
+
+return ((char *) 0);
+}
 
 int main(int argc, char **argv) 
 {
@@ -509,7 +638,8 @@ int main(int argc, char **argv)
 	int vRetFromKernelThread, vRetFromKernelJoin;
 	int vRetFromRunBpfThread, vRetFromRunBpfJoin;
 	int vRetFromRunHttpServerThread, vRetFromRunHttpServerJoin;
-	pthread_t doRunTalkToKernelThread_id, doRunBpfCollectionThread_id, doRunHttpServerThread_id;
+	int vRetFromRunGetThresholdsThread, vRetFromRunGetThresholdsJoin;
+	pthread_t doRunTalkToKernelThread_id, doRunBpfCollectionThread_id, doRunHttpServerThread_id, doRunGetThresholds_id;
 	sArgv_t sArgv;
 	time_t clk;
 	char ctime_buf[27];
@@ -547,7 +677,7 @@ int main(int argc, char **argv)
 #endif
 	gettime(&clk, ctime_buf);
 	current_phase = LEARNING;
-	
+
 	fd = open(pDevName, O_RDWR,0);
 
 	if (fd > 0)
@@ -574,6 +704,8 @@ int main(int argc, char **argv)
 
 	//Start Http server Thread	
 	vRetFromRunHttpServerThread = pthread_create(&doRunHttpServerThread_id, NULL, fDoRunHttpServer, &sArgv);
+	
+	vRetFromRunGetThresholdsThread = pthread_create(&doRunGetThresholds_id, NULL, fDoRunGetThresholds, &sArgv); 
 
 	if (vRetFromKernelThread == 0)
     		vRetFromKernelJoin = pthread_join(doRunTalkToKernelThread_id, NULL);
@@ -583,6 +715,9 @@ int main(int argc, char **argv)
 	
 	if (vRetFromRunHttpServerThread == 0)
     		vRetFromRunHttpServerJoin = pthread_join(doRunHttpServerThread_id, NULL);
+	
+	if (vRetFromRunGetThresholdsThread == 0)
+    		vRetFromRunGetThresholdsJoin = pthread_join(doRunGetThresholds_id, NULL);
 
 	if (fd > 0)
 		close(fd);
