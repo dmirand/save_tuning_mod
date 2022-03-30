@@ -1147,7 +1147,7 @@ int fDoGetNuma(void)
 	int found = 0;
 
 	gettime(&clk, ctime_buf);
-	sprintf(aNicSetting,"cat /sys/class/net/%s/device/numa_node > /tmp/NIC.cfgfile",netDevice);
+	sprintf(aNicSetting,"cat /sys/class/net/%s/device/numa_node > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
 	system(aNicSetting);
 
 	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
@@ -2013,7 +2013,7 @@ int user_assess(int argc, char **argv)
 
 	fDoSystemTuning();
 
-	fDoNicTuning();
+	//fDoNicTuning();
 
 	fDoBiosTuning();
 
