@@ -1200,6 +1200,7 @@ int fDoGetNuma(void)
 
 
 static int rec_txqueuelen_Greater10G = 20000; //recommended value for now if greater 10G
+//static int rec_txqueuelen_Greater10G = 10000; //recommended value for now if greater 10G
 static int rec_txqueuelen = 1000; //recommended value for now if 10G or less
 static int rec_mtu = 9000; //recommended value for now
 static char * rec_tcqdisc = "fq"; //recommended value for now
@@ -1969,13 +1970,19 @@ void fDoNicTuning(void)
 
 	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
 	fflush(tunLogPtr);
-
+#if 0
+	//have to test more and see how this affects the NIC
 	fDoTxQueueLen();
+#endif
 	fDoRingBufferSize();
+#if 0
+	//have to test more and see how this affects the NIC
 	fDoLRO();//large receive offload
 	fDoMTU();
 	fDoTcQdiscFq();
 	fDoFlowControl();
+#endif
+
 	//fDoIrqAffinity(); //Skip IRQ affinity for now
 
 /*
