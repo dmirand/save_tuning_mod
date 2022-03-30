@@ -4,13 +4,16 @@
 static void on_response(http_s *h);
 
 static char * Usage = "This is an HTTP client to talk to Tuning Module. \
-		       \nPlease use \"tuncli -t\" to apply tunings that were recommended \n";
+		       \nPlease use \"tuncli -t\" to apply tunings that were recommended. \
+		       \nPlease use \"tuncli -b rx [value]\" to change RX ring buffer size of the NIC. \
+		       \nPlease use \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC.\n";
 
 int main(int argc, const char *argv[]) 
 {
 	int argc_try = 2;
 	char *localaddr = "http://127.0.0.1";
 	char aTmp[512];
+	char aSecondPart[128];
 	char aListenPort[32];
 	char *gAPI_listen_port = "5523"; //default
 	char *pAPI_listen_port_name = "API_listen_port";
@@ -24,18 +27,24 @@ int main(int argc, const char *argv[])
 	char *p = 0;
 	char setting[256];
 
-	if (argc != 2)
-	{
-		printf("%s",Usage);
-		exit(0);
-	}
+	if (argc != 2 && argc != 4)
+		goto leave;
 
-	if (strcmp(argv[1],"-t") != 0)
+	if ((strcmp(argv[1],"-t") == 0) && argc == 2)
 	{
-		printf("%s",Usage);
-		exit(-1);
+		strcpy(aSecondPart,argv[1]);
+		goto carry_on;
 	}
-		
+	else
+		if ((strcmp(argv[1],"-b") == 0) && argc == 4)
+		{
+			sprintf(aSecondPart,"%s#%s#%s",argv[1], argv[2],argv[3]);
+			goto carry_on;
+		}
+	
+	goto leave;
+
+carry_on:	
 	userCfgPtr = fopen(pUserCfgFile,"r");
 	if (!userCfgPtr)
 	{
@@ -80,7 +89,9 @@ int main(int argc, const char *argv[])
 	if (!found)
 		strcpy(aListenPort,gAPI_listen_port);
 
-	sprintf(aTmp,"%s:%s/%s",localaddr,aListenPort,argv[1]);
+	//sprintf(aTmp,"%s:%s/%s",localaddr,aListenPort,argv[1]);
+	sprintf(aTmp,"%s:%s/",localaddr,aListenPort);
+	strcat(aTmp,aSecondPart);
 	/* a hack so I could use 127.0.0.1 */
 	argv_try[0] = "tuncli";
 	argv_try[1] = aTmp;
@@ -100,6 +111,10 @@ int main(int argc, const char *argv[])
 	if (line)
 		free(line);
 	return 0;
+
+leave:
+	printf("%s",Usage);
+	exit(-1);
 }
 
 static void on_response(http_s *h) 

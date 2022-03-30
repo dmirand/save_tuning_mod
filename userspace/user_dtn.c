@@ -607,14 +607,19 @@ void check_req(http_s *h, char aResp[])
 	char ctime_buf[27];
 	char aHttpRequest[256];
 	char * pReqData = fiobj_obj2cstr(r).data;
+	int count = 0;
+	char aNicSettingFromHttp[512];
+	char aNumber[16];
 	
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Received Data from Http Client***\nData is:\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,"%s", pReqData);
 
+	memset(aNumber,0,sizeof(aNumber));
+
 	if (strstr(pReqData,"GET /-t"))
 	{
-		/* TODO: Apply tuning */
+		//Apply tuning
 		strcpy(aResp,"Recommended Tuning applied!!!\n");
 	
 		gettime(&clk, ctime_buf);
@@ -622,16 +627,57 @@ void check_req(http_s *h, char aResp[])
 		fprintf(tunLogPtr,"%s %s: ***Applying recommended Tuning now***\n", ctime_buf, phase2str(current_phase));
 		sprintf(aHttpRequest,"sh ./user_menu.sh");
 		system(aHttpRequest);
-		/* TODO: Apply tuning */
 	}
 	else
+		if (strstr(pReqData,"GET /-b#rx#"))
 		{
-			strcpy(aResp,"Received something else!!!\n");
-		
+			/* Change rx ring buffer size */
+			char *p = (pReqData + sizeof("GET /-b#rx#")) - 1;
+			while (isdigit(*p))
+			{
+				aNumber[count++] = *p;
+				p++;
+			}
+
+
+			sprintf(aResp,"Changed rx ring buffer size of %s to %s!\n", netDevice, aNumber);
 			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr,"%s %s: ***Received some kind of request from Http Client***\n", ctime_buf, phase2str(current_phase));
-			fprintf(tunLogPtr,"%s %s: ***Applying some kind of request***\n", ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change RX ring buffer size of %s to %s***\n", ctime_buf, phase2str(current_phase), netDevice, aNumber);
+			fprintf(tunLogPtr,"%s %s: ***Changing RX buffer size now***\n", ctime_buf, phase2str(current_phase));
+			sprintf(aNicSettingFromHttp,"ethtool -G %s rx %s", netDevice, aNumber);
+			
+			fprintf(tunLogPtr,"%s %s: ***Doing *%s***\n", ctime_buf, phase2str(current_phase), aNicSettingFromHttp);
+			system(aNicSettingFromHttp);
 		}
+		else
+			if (strstr(pReqData,"GET /-b#tx#"))
+			{
+				/* Change tx ring buffer size */
+				char *p = (pReqData + sizeof("GET /-b#tx#")) - 1;
+				while (isdigit(*p))
+				{
+					aNumber[count++] = *p;
+					p++;
+				}
+
+				sprintf(aResp,"Changed tx ring buffer size of %s to %s!\n", netDevice, aNumber);
+		
+				gettime(&clk, ctime_buf);
+				fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change TX ring buffer size of %s to %s***\n", ctime_buf, phase2str(current_phase), netDevice, aNumber);
+				fprintf(tunLogPtr,"%s %s: ***Changing TX buffer size now***\n", ctime_buf, phase2str(current_phase));
+				sprintf(aNicSettingFromHttp,"ethtool -G %s tx %s", netDevice, aNumber);
+			
+				fprintf(tunLogPtr,"%s %s: ***Doing *%s***\n", ctime_buf, phase2str(current_phase), aNicSettingFromHttp);
+				system(aNicSettingFromHttp);
+			}
+			else
+				{
+					strcpy(aResp,"Received something else!!!\n");
+		
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr,"%s %s: ***Received some kind of request from Http Client***\n", ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***Applying some kind of request***\n", ctime_buf, phase2str(current_phase));
+				}
 
 	fflush(tunLogPtr);
 return;
