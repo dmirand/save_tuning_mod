@@ -224,7 +224,7 @@ exit_program: {
 void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 {
 	void *data_end = data + size;
-	__u32 data_offset = 0;
+	__u32 data_offset;
 	struct hop_key hop_key;
 
 	if(data + data_offset + sizeof(hop_key) > data_end) return;
