@@ -28,6 +28,8 @@ int gInterval = 2; //default
 int gAPI_listen_port = 5523; //default listening port
 int netDeviceSpeed = 0;
 int numaNode = 0;
+static int netDevice_rx_ring_buff_cfg_max_val = 0;
+static int netDevice_tx_ring_buff_cfg_max_val = 0;
 
 char *pUserCfgFile = "user_config.txt";
 char gTuningMode = 0;
@@ -1202,7 +1204,7 @@ int fDoGetNuma(void)
 static int rec_txqueuelen_Greater10G = 20000; //recommended value for now if greater 10G
 //static int rec_txqueuelen_Greater10G = 10000; //recommended value for now if greater 10G
 static int rec_txqueuelen = 1000; //recommended value for now if 10G or less
-static int rec_mtu = 9000; //recommended value for now
+static int rec_mtu = 9200; //recommended value for now
 static char * rec_tcqdisc = "fq"; //recommended value for now
 void fDoTxQueueLen()
 {
@@ -1312,6 +1314,220 @@ void fDoTxQueueLen()
 
 void fDoRingBufferSize()
 {
+#if 1
+        char ctime_buf[27];
+        time_t clk;
+        char *line = NULL;
+        size_t len = 0;
+        ssize_t nread;
+        struct stat sb;
+        char aNicSetting[512];
+        char sRXMAXValue[256];
+        char sRXCURRValue[256];
+        char sTXMAXValue[256];
+        char sTXCURRValue[256];
+        int rxcount = 0;
+        int txcount = 0;
+        int vPad;
+        FILE *nicCfgFPtr = 0;
+
+        sprintf(aNicSetting,"ethtool --show-ring %s > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
+        system(aNicSetting);
+
+        stat("/tmp/NIC.cfgfile", &sb);
+        if (sb.st_size == 0)
+        {
+                //doesn't support ethtool -a
+                goto dnrb_support;
+        }
+
+        nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+        if (!nicCfgFPtr)
+        {
+                int save_errno = errno;
+                gettime(&clk, ctime_buf);
+                fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+        }
+        else
+                {
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+                        { //2nd and 3rd keywords RX and tx ring buffer size
+                                int count = 0, ncount = 0;
+
+                                if (strstr(line,"RX:") && rxcount == 0)
+                                {
+                                        rxcount++;
+
+                                        while (!isdigit(line[count])) count++;
+
+                                        while (isdigit(line[count]))
+                                        {
+                                                sRXMAXValue[ncount] = line[count];
+                                                ncount++;
+                                                count++;
+                                        }
+
+                                        sRXMAXValue[ncount] = 0;
+                                }
+                                else
+                                        if (strstr(line,"RX:"))
+                                        {
+                                                rxcount++;
+
+                                                while (!isdigit(line[count])) count++;
+
+                                                while (isdigit(line[count]))
+                                                {
+                                                        sRXCURRValue[ncount] = line[count];
+                                                        ncount++;
+                                                        count++;
+                                                }
+
+                                                sRXCURRValue[ncount] = 0;
+                                        }
+                                        else
+                                                if (strstr(line,"TX:") && txcount == 0)
+							{
+                                                        txcount++;
+
+                                                        while (!isdigit(line[count])) count++;
+
+                                                        while (isdigit(line[count]))
+                                                        {
+                                                                sTXMAXValue[ncount] = line[count];
+                                                                ncount++;
+                                                                count++;
+                                                        }
+
+                                                        sTXMAXValue[ncount] = 0;
+                                                }
+                                                else
+                                                        if (strstr(line,"TX:"))
+                                                        {
+                                                                //should be the last thing I need
+                                                                int cfg_max_val = 0;
+                                                                int cfg_cur_val = 0;
+
+                                                                txcount++;
+
+                                                                while (!isdigit(line[count])) count++;
+
+                                                                while (isdigit(line[count]))
+                                                                {
+                                                                        sTXCURRValue[ncount] = line[count];
+                                                                        ncount++;
+                                                                        count++;
+                                                                }
+
+                                                                sTXCURRValue[ncount] = 0;
+
+                                                                cfg_max_val = atoi(sRXMAXValue);
+                                                                cfg_cur_val = atoi(sRXCURRValue);
+
+                                                                vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_RX"));
+                                                                fprintf(tunLogPtr,"%s", "ring_buffer_RX"); //redundancy for visual
+                                                                fprintf(tunLogPtr,"%*s", vPad, sRXCURRValue);
+
+								netDevice_rx_ring_buff_cfg_max_val = cfg_max_val;
+                                                                if (cfg_max_val > cfg_cur_val)
+                                                                {
+                                                                        if (netDeviceSpeed < 100000) //less than 100 Gb/s and greater than 10 Gb/s
+                                                                        {
+                                                                                fprintf(tunLogPtr,"%26d %20s\n", cfg_cur_val, "na"); //leave alone for now
+                                                                        }
+                                                                        else
+                                                                                {
+                                                                                        if ((cfg_max_val > 8192) && (cfg_cur_val < 8192))
+                                                                                                cfg_max_val = 8192; //don't go above that for now on 100G
+
+                                                                                        if ((cfg_max_val > 8192) && (cfg_cur_val > 8192))
+                                                                                                cfg_max_val = cfg_cur_val; //don't go above that for now on 100G
+
+                                                                                        fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
+                                                                                        if (gApplyNicTuning == 'y')
+                                                                                        {
+                                                                                                //Apply Initial DefSys Tuning
+                                                                                                sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
+                                                                                                system(aNicSetting);
+                                                                                        }
+                                                                                        else
+                                                                                                {
+                                                                                                        //Save in Case Operator want to apply from menu
+                                                                                                        sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
+                                                                                                        memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+                                                                                                        aApplyNicDefTunCount++;
+                                                                                                }
+                                                                                }
+                                                                }
+                                                                else
+                                                                        fprintf(tunLogPtr,"%26d %20s\n", cfg_max_val, "na");
+
+                                                                cfg_max_val = atoi(sTXMAXValue);
+                                                                cfg_cur_val = atoi(sTXCURRValue);
+
+                                                                vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_TX"));
+                                                                fprintf(tunLogPtr,"%s", "ring_buffer_TX"); //redundancy for visual
+                                                                fprintf(tunLogPtr,"%*s", vPad, sTXCURRValue);
+
+								netDevice_tx_ring_buff_cfg_max_val = cfg_max_val;
+                                                                if (cfg_max_val > cfg_cur_val)
+                                                                {
+                                                                        if (netDeviceSpeed < 100000) //less than 100 Gb/s and greater than 10 Gb/s
+                                                                        {
+                                                                                fprintf(tunLogPtr,"%26d %20s\n", cfg_cur_val, "na");
+                                                                        }
+                                                                        else
+                                                                                {
+                                                                                        if ((cfg_max_val > 8192) && (cfg_cur_val < 8192))
+                                                                                                cfg_max_val = 8192; //don't go above that for now on 100G
+
+                                                                                        if ((cfg_max_val > 8192) && (cfg_cur_val > 8192))
+                                                                                                cfg_max_val = cfg_cur_val; //don't go above that for now on 100G
+
+                                                                                        fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
+                                                                                        if (gApplyNicTuning == 'y')
+                                                                                        {
+                                                                                                //Apply Initial DefSys Tuning
+                                                                                                sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
+                                                                                                system(aNicSetting);
+                                                                                        }
+                                                                                        else
+                                                                                                {
+                                                                                                        //Save in Case Operator want to apply from menu
+                                                                                                        sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
+                                                                                                        memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
+                                                                                                        aApplyNicDefTunCount++;
+                                                                                                }
+                                                                                }
+                                                                }
+                                                                else
+                                                                        fprintf(tunLogPtr,"%26d %20s\n", cfg_max_val, "na");
+
+                                                                //should be the last thing I need
+                                                                break;
+                                                        }
+                                                        else
+                                                                continue;
+                        }
+
+                        fclose(nicCfgFPtr);
+                        system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+                }
+
+        if (line)
+                free(line);
+
+	return;
+
+dnrb_support:
+        vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_rx_tx"));
+        fprintf(tunLogPtr,"%s", "ring_buffer_rx_tx"); //redundancy for visual
+        fprintf(tunLogPtr,"%*s", vPad, "not supported");
+        fprintf(tunLogPtr,"%26s %20s\n", "not supported", "na");
+        system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+
+        return;
+#else
 	char ctime_buf[27];
 	time_t clk;
 	char *line = NULL;
@@ -1496,6 +1712,7 @@ dnrb_support:
 	system("rm -f /tmp/NIC.cfgfile"); //remove file after use
 
 	return;
+#endif
 }
 
 void fDoLRO() 
@@ -1978,7 +2195,9 @@ void fDoNicTuning(void)
 #if 0
 	//have to test more and see how this affects the NIC
 	fDoLRO();//large receive offload
+#endif
 	fDoMTU();
+#if 0
 	fDoTcQdiscFq();
 	fDoFlowControl();
 #endif
@@ -2020,7 +2239,7 @@ int user_assess(int argc, char **argv)
 
 	fDoSystemTuning();
 
-	//fDoNicTuning();
+	fDoNicTuning();
 
 	fDoBiosTuning();
 

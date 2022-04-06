@@ -1529,7 +1529,7 @@ int fDoGetNuma(void)
 
 static int rec_txqueuelen_Greater10G = 20000; //recommended value for now if greater 10G
 static int rec_txqueuelen = 1000; //recommended value for now if 10G or less
-static int rec_mtu = 9000; //recommended value for now
+static int rec_mtu = 9200; //recommended value for now
 static char * rec_tcqdisc = "fq"; //recommended value for now
 void fDoTxQueueLen()
 {
@@ -2325,13 +2325,18 @@ void fDoNicTuning(void)
 
 	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
 	fflush(tunLogPtr);
-
+#if 0
 	fDoTxQueueLen();
+#endif
 	fDoRingBufferSize();
+#if 0
 	fDoLRO();//large receive offload
+#endif
 	fDoMTU();
+#if 0
 	fDoTcQdiscFq();
 	fDoFlowControl();
+#endif
 	//fDoIrqAffinity(); // skip irq affinity for now
 
 /*
