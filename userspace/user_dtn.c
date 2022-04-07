@@ -196,7 +196,8 @@ perf_event_loop: {
 	fflush(tunLogPtr);
  	int err = 0;
 	do {
-	err = perf_buffer__poll(pb, 500);
+	err = perf_buffer__poll(pb, 100);
+	//err = perf_buffer__poll(pb, 500);
 	}
 	while(err >= 0);
 	fprintf(tunLogPtr,"%s %s: Exited perf event loop with err %d..\n", ctime_buf, phase2str(current_phase), -err);
@@ -221,11 +222,13 @@ exit_program: {
 	}
 }
 
+static __u32 vHighest_Rtt = 0;
 void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 {
 	void *data_end = data + size;
 	__u32 data_offset = 0;
 	struct hop_key hop_key;
+	__u32 vCurrent_Rtt = 0;
 
 	if(data + data_offset + sizeof(hop_key) > data_end) return;
 
@@ -266,6 +269,8 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	bpf_map_update_elem(ctx->flow_thresholds, &hop_key.flow_key, &flow_threshold_update, BPF_ANY);
 	struct counter_set empty_counter = {};
 	bpf_map_update_elem(ctx->flow_counters, &(hop_key.flow_key), &empty_counter, BPF_NOEXIST);
+	vCurrent_Rtt = flow_threshold_update.hop_latency_threshold * 2; //double up for now to simulate 2 way value
+	fprintf(stdout, "CURRENT_RTT = %d\n",vCurrent_Rtt);
 }
 
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
