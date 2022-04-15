@@ -203,8 +203,7 @@ perf_event_loop: {
 	fflush(tunLogPtr);
  	int err = 0;
 	do {
-	err = perf_buffer__poll(pb, 100);
-	//err = perf_buffer__poll(pb, 500);
+	err = perf_buffer__poll(pb, 500);
 	}
 	while(err >= 0);
 	fprintf(tunLogPtr,"%s %s: Exited perf event loop with err %d..\n", ctime_buf, phase2str(current_phase), -err);
