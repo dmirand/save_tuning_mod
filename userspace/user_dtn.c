@@ -126,11 +126,18 @@ struct threshold_maps
 };
 
 #define MAP_DIR "/sys/fs/bpf/test_maps"
+#if 0
+//original stuff
 #define HOP_LATENCY_DELTA 20000
 #define FLOW_LATENCY_DELTA 50000
 #define QUEUE_OCCUPANCY_DELTA 80
 #define FLOW_SINK_TIME_DELTA 1000000000
-
+#else
+#define HOP_LATENCY_DELTA 2000000
+#define FLOW_LATENCY_DELTA 5000000
+#define QUEUE_OCCUPANCY_DELTA 8000
+#define FLOW_SINK_TIME_DELTA 4000000000
+#endif
 #define INT_DSCP (0x17)
 
 #define PERF_PAGE_COUNT 512
@@ -222,7 +229,6 @@ exit_program: {
 	}
 }
 
-static __u32 vHighest_Rtt = 0;
 void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 {
 	void *data_end = data + size;
@@ -250,17 +256,25 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		struct int_hop_metadata *hop_metadata_ptr = data + data_offset;
 		data_offset += sizeof(struct int_hop_metadata);
 
+		fprintf(stdout, "switch_id = %u\n",ntohl(hop_metadata_ptr->switch_id));
+		fprintf(stdout, "ingress_port_id = %d\n",ntohs(hop_metadata_ptr->ingress_port_id));
+		fprintf(stdout, "egress_port_id = %d\n",ntohs(hop_metadata_ptr->egress_port_id));
+		fprintf(stdout, "hop_latency = %u\n",ntohl(hop_metadata_ptr->hop_latency));
+		fprintf(stdout, "Qinfo = %u\n",ntohl(hop_metadata_ptr->queue_info) & 0xffffff);
+		fprintf(stdout, "ingress_time = %u\n",ntohl(hop_metadata_ptr->ingress_time));
+		fprintf(stdout, "egress_time = %u\n",ntohl(hop_metadata_ptr->egress_time));
 		struct hop_thresholds hop_threshold_update = {
-			ntohs(hop_metadata_ptr->egress_time) - ntohs(hop_metadata_ptr->ingress_time),
+			ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time),
 			HOP_LATENCY_DELTA,
-			ntohs(hop_metadata_ptr->queue_info) & 0xffffff,
+			ntohl(hop_metadata_ptr->queue_info) & 0xffffff,
 			QUEUE_OCCUPANCY_DELTA,
-			ntohs(hop_metadata_ptr->switch_id)
+			ntohl(hop_metadata_ptr->switch_id)
 		};
 
 		bpf_map_update_elem(ctx->hop_thresholds, &hop_key, &hop_threshold_update, BPF_ANY);
-		if(hop_key.hop_index == 0) { flow_threshold_update.sink_time_threshold = ntohs(hop_metadata_ptr->ingress_time); }
-		flow_threshold_update.hop_latency_threshold += ntohs(hop_metadata_ptr->egress_time) - ntohs(hop_metadata_ptr->ingress_time);
+		if(hop_key.hop_index == 0) { flow_threshold_update.sink_time_threshold = ntohl(hop_metadata_ptr->ingress_time); }
+		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
+		vCurrent_Rtt += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		print_hop_key(&hop_key);
 		hop_key.hop_index++;
 	}
@@ -269,7 +283,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	bpf_map_update_elem(ctx->flow_thresholds, &hop_key.flow_key, &flow_threshold_update, BPF_ANY);
 	struct counter_set empty_counter = {};
 	bpf_map_update_elem(ctx->flow_counters, &(hop_key.flow_key), &empty_counter, BPF_NOEXIST);
-	vCurrent_Rtt = flow_threshold_update.hop_latency_threshold * 2; //double up for now to simulate 2 way value
+	vCurrent_Rtt = vCurrent_Rtt * 2; //double up for now to simulate 2 way value
 	fprintf(stdout, "CURRENT_RTT = %d\n",vCurrent_Rtt);
 }
 
@@ -844,7 +858,7 @@ start:
 #if 1
 			tx_bits_per_sec = ((8 * tx_bytes_tot) / 1024) / secs_passed;
 			rx_bits_per_sec = ((8 * rx_bytes_tot) / 1024) / secs_passed;;
-			printf("TX %s: %lu kb/s RX %s: %lu kb/s, secs_passed %lu\n", netDevice, tx_bits_per_sec, netDevice, rx_bits_per_sec, secs_passed);
+			//printf("TX %s: %lu kb/s RX %s: %lu kb/s, secs_passed %lu\n", netDevice, tx_bits_per_sec, netDevice, rx_bits_per_sec, secs_passed);
 
 			pclose(pipe);
 			break;
