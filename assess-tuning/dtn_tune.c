@@ -2325,16 +2325,15 @@ void fDoNicTuning(void)
 
 	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
 	fflush(tunLogPtr);
-#if 0
+	
 	fDoTxQueueLen();
-#endif
 	fDoRingBufferSize();
 #if 0
 	fDoLRO();//large receive offload
 #endif
 	fDoMTU();
-#if 0
 	fDoTcQdiscFq();
+#if 0
 	fDoFlowControl();
 #endif
 	//fDoIrqAffinity(); // skip irq affinity for now
