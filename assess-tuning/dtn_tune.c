@@ -2328,7 +2328,7 @@ void fDoNicTuning(void)
 	
 	fDoTxQueueLen();
 	fDoRingBufferSize();
-#if 0
+#if 1
 	fDoLRO();//large receive offload
 #endif
 	fDoMTU();
