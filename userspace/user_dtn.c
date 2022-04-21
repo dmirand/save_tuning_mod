@@ -133,10 +133,9 @@ struct threshold_maps
 #define QUEUE_OCCUPANCY_DELTA 80
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
-//#define HOP_LATENCY_DELTA 40000
-#define HOP_LATENCY_DELTA 100000
-#define FLOW_LATENCY_DELTA 50000
-#define QUEUE_OCCUPANCY_DELTA 8000
+#define HOP_LATENCY_DELTA 10000000
+#define FLOW_LATENCY_DELTA 50000000
+#define QUEUE_OCCUPANCY_DELTA 1500
 #define FLOW_SINK_TIME_DELTA 4000000000
 #endif
 #define INT_DSCP (0x17)
@@ -204,7 +203,8 @@ perf_event_loop: {
 	fflush(tunLogPtr);
  	int err = 0;
 	do {
-	err = perf_buffer__poll(pb, 500);
+	//err = perf_buffer__poll(pb, 500);
+	err = perf_buffer__poll(pb, 100);
 	}
 	while(err >= 0);
 	fprintf(tunLogPtr,"%s %s: Exited perf event loop with err %d..\n", ctime_buf, phase2str(current_phase), -err);
@@ -259,7 +259,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 //		fprintf(stdout, "switch_id = %u\n",ntohl(hop_metadata_ptr->switch_id));
 //		fprintf(stdout, "ingress_port_id = %d\n",ntohs(hop_metadata_ptr->ingress_port_id));
 //		fprintf(stdout, "egress_port_id = %d\n",ntohs(hop_metadata_ptr->egress_port_id));
-		fprintf(stdout, "hop_latency = %u\n",ntohl(hop_metadata_ptr->hop_latency));
+		fprintf(stdout, "\nhop_latency = %u\n",ntohl(hop_metadata_ptr->hop_latency));
 		fprintf(stdout, "Qinfo = %u\n",ntohl(hop_metadata_ptr->queue_info) & 0xffffff);
 		fprintf(stdout, "ingress_time = %u\n",ntohl(hop_metadata_ptr->ingress_time));
 		fprintf(stdout, "egress_time = %u\n",ntohl(hop_metadata_ptr->egress_time));
