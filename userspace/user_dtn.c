@@ -133,9 +133,9 @@ struct threshold_maps
 #define QUEUE_OCCUPANCY_DELTA 80
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
-#define HOP_LATENCY_DELTA 10000000
-#define FLOW_LATENCY_DELTA 50000000
-#define QUEUE_OCCUPANCY_DELTA 1500
+#define HOP_LATENCY_DELTA 70000 //can try 60000 //50000 ok so far with MSS set
+#define FLOW_LATENCY_DELTA 60000 //can try 55000 //50000 ok so far with MSS set with 4 hops of metadata
+#define QUEUE_OCCUPANCY_DELTA 5000 //can try 4000 //25000 ok when no MSS set - we currently set MSS to 7500
 #define FLOW_SINK_TIME_DELTA 4000000000
 #endif
 #define INT_DSCP (0x17)
@@ -204,7 +204,7 @@ perf_event_loop: {
  	int err = 0;
 	do {
 	//err = perf_buffer__poll(pb, 500);
-	err = perf_buffer__poll(pb, 100);
+	err = perf_buffer__poll(pb, 250);
 	}
 	while(err >= 0);
 	fprintf(tunLogPtr,"%s %s: Exited perf event loop with err %d..\n", ctime_buf, phase2str(current_phase), -err);
@@ -229,12 +229,14 @@ exit_program: {
 	}
 }
 
+static __u32 flow_sink_time_threshold = 0;
 void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 {
 	void *data_end = data + size;
 	__u32 data_offset = 0;
 	struct hop_key hop_key;
-	__u32 vCurrent_Rtt = 0;
+	double vCurrent_Rtt = 0.0;
+	long long flow_hop_latency_threshold = 0;
 
 	if(data + data_offset + sizeof(hop_key) > data_end) return;
 
@@ -251,6 +253,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 	hop_key.hop_index = 0;
 	
+	fprintf(stdout,"\n******************************************************************\n");
 	while (data + data_offset + sizeof(struct int_hop_metadata) <= data_end)
 	{
 		struct int_hop_metadata *hop_metadata_ptr = data + data_offset;
@@ -259,10 +262,11 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 //		fprintf(stdout, "switch_id = %u\n",ntohl(hop_metadata_ptr->switch_id));
 //		fprintf(stdout, "ingress_port_id = %d\n",ntohs(hop_metadata_ptr->ingress_port_id));
 //		fprintf(stdout, "egress_port_id = %d\n",ntohs(hop_metadata_ptr->egress_port_id));
-		fprintf(stdout, "\nhop_latency = %u\n",ntohl(hop_metadata_ptr->hop_latency));
+//		fprintf(stdout, "hop_latency = %u\n",ntohl(hop_metadata_ptr->hop_latency));
 		fprintf(stdout, "Qinfo = %u\n",ntohl(hop_metadata_ptr->queue_info) & 0xffffff);
 		fprintf(stdout, "ingress_time = %u\n",ntohl(hop_metadata_ptr->ingress_time));
 		fprintf(stdout, "egress_time = %u\n",ntohl(hop_metadata_ptr->egress_time));
+		fprintf(stdout, "hop_hop_latency_threshold = %u\n",ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time));
 #endif
 		struct hop_thresholds hop_threshold_update = {
 			ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time),
@@ -273,10 +277,22 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		};
 
 		bpf_map_update_elem(ctx->hop_thresholds, &hop_key, &hop_threshold_update, BPF_ANY);
-		if(hop_key.hop_index == 0) { flow_threshold_update.sink_time_threshold = ntohl(hop_metadata_ptr->ingress_time); }
+		if(hop_key.hop_index == 0) 
+		{       
+			__u32 ingress_time = ntohl(hop_metadata_ptr->ingress_time);
+			flow_threshold_update.sink_time_threshold = ingress_time;; 
+
+			fprintf(stdout, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
+#if 0
+			if ((ingress_time - flow_sink_time_threshold) > FLOW_SINK_TIME_DELTA)
+				fprintf(tunLogPtr, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
+#endif
+			flow_sink_time_threshold = ingress_time;	
+		}
 		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
+		flow_hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		vCurrent_Rtt += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
-//		print_hop_key(&hop_key);
+		print_hop_key(&hop_key);
 		hop_key.hop_index++;
 	}
 
@@ -284,8 +300,9 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	bpf_map_update_elem(ctx->flow_thresholds, &hop_key.flow_key, &flow_threshold_update, BPF_ANY);
 	struct counter_set empty_counter = {};
 	bpf_map_update_elem(ctx->flow_counters, &(hop_key.flow_key), &empty_counter, BPF_NOEXIST);
-	vCurrent_Rtt = vCurrent_Rtt * 2; //double up for now to simulate 2 way value
-	//fprintf(stdout, "CURRENT_RTT = %d\n",vCurrent_Rtt);
+	vCurrent_Rtt = vCurrent_Rtt * 2; //double up for now to simulate 2 way value - should be in nanosecs
+	fprintf(stdout, "CURRENT_RTT = %f, flow_hop_latency_threshold = %lld\n",vCurrent_Rtt/1000000.0, flow_hop_latency_threshold);
+	fflush(tunLogPtr);
 }
 
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
@@ -303,8 +320,8 @@ void print_flow_key(struct flow_key *key)
 
 void print_hop_key(struct hop_key *key)
 {
-	fprintf(stdout, "Hop Key:\n");
-	print_flow_key(&(key->flow_key));
+	//fprintf(stdout, "Hop Key:\n");
+	//print_flow_key(&(key->flow_key));
 	fprintf(stdout, "\thop_index: %X\n", key->hop_index);
 }
 
