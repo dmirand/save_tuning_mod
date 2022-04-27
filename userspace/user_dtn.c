@@ -61,6 +61,7 @@ int msleep(long msec)
 
 char netDevice[128];
 static unsigned long rx_bits_per_sec = 0, tx_bits_per_sec = 0;
+static int vDebugLevel = 1; //Print regular messages to log file
 
 #define SIGINT_MSG "SIGINT received.\n"
 void sig_int_handler(int signum, siginfo_t *info, void *ptr)
@@ -133,8 +134,8 @@ struct threshold_maps
 #define QUEUE_OCCUPANCY_DELTA 80
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
-#define HOP_LATENCY_DELTA 70000 //can try 60000 //50000 ok so far with MSS set
-#define FLOW_LATENCY_DELTA 60000 //can try 55000 //50000 ok so far with MSS set with 4 hops of metadata
+#define HOP_LATENCY_DELTA 100000 //can try 60000 //50000 should show issues
+#define FLOW_LATENCY_DELTA 200000 //can try 90000 ok so far with MSS set with 4 hops of metadata //50000 should show issues
 #define QUEUE_OCCUPANCY_DELTA 5000 //can try 4000 //25000 ok when no MSS set - we currently set MSS to 7500
 #define FLOW_SINK_TIME_DELTA 4000000000
 #endif
@@ -252,13 +253,17 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	};
 
 	hop_key.hop_index = 0;
-	
-	fprintf(stdout,"\n******************************************************************\n");
+
+	if (vDebugLevel > 2)
+		fprintf(stdout,"\n******************************************************************\n");
+
 	while (data + data_offset + sizeof(struct int_hop_metadata) <= data_end)
 	{
 		struct int_hop_metadata *hop_metadata_ptr = data + data_offset;
 		data_offset += sizeof(struct int_hop_metadata);
-#if 1
+	if (vDebugLevel > 2)
+	{
+
 //		fprintf(stdout, "switch_id = %u\n",ntohl(hop_metadata_ptr->switch_id));
 //		fprintf(stdout, "ingress_port_id = %d\n",ntohs(hop_metadata_ptr->ingress_port_id));
 //		fprintf(stdout, "egress_port_id = %d\n",ntohs(hop_metadata_ptr->egress_port_id));
@@ -267,7 +272,14 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		fprintf(stdout, "ingress_time = %u\n",ntohl(hop_metadata_ptr->ingress_time));
 		fprintf(stdout, "egress_time = %u\n",ntohl(hop_metadata_ptr->egress_time));
 		fprintf(stdout, "hop_hop_latency_threshold = %u\n",ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time));
-#endif
+	}
+
+		if (vDebugLevel > 1)
+		{
+			if ((ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time)) > HOP_LATENCY_DELTA)
+				fprintf(tunLogPtr, "***hop_hop_latency_threshold = %u\n", ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time));
+		}
+
 		struct hop_thresholds hop_threshold_update = {
 			ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time),
 			HOP_LATENCY_DELTA,
@@ -282,11 +294,15 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			__u32 ingress_time = ntohl(hop_metadata_ptr->ingress_time);
 			flow_threshold_update.sink_time_threshold = ingress_time;; 
 
+		if (vDebugLevel > 2)
 			fprintf(stdout, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
-#if 0
+
+		if (vDebugLevel > 3)
+		{
 			if ((ingress_time - flow_sink_time_threshold) > FLOW_SINK_TIME_DELTA)
 				fprintf(tunLogPtr, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
-#endif
+		}
+
 			flow_sink_time_threshold = ingress_time;	
 		}
 		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
@@ -301,8 +317,16 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	struct counter_set empty_counter = {};
 	bpf_map_update_elem(ctx->flow_counters, &(hop_key.flow_key), &empty_counter, BPF_NOEXIST);
 	vCurrent_Rtt = vCurrent_Rtt * 2; //double up for now to simulate 2 way value - should be in nanosecs
-	fprintf(stdout, "CURRENT_RTT = %f, flow_hop_latency_threshold = %lld\n",vCurrent_Rtt/1000000.0, flow_hop_latency_threshold);
-	fflush(tunLogPtr);
+
+	if (vDebugLevel > 2)
+		fprintf(stdout, "PSUEDO_CURRENT_RTT = %f, flow_hop_latency_threshold = %lld\n",vCurrent_Rtt/1000000.0, flow_hop_latency_threshold);
+	
+	if (vDebugLevel > 1)
+	{
+		if (flow_hop_latency_threshold > FLOW_LATENCY_DELTA)
+			fprintf(tunLogPtr, "***flow_hop_latency_threshold = %lld\n", flow_hop_latency_threshold);
+		fflush(tunLogPtr);
+	}
 }
 
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
@@ -320,9 +344,12 @@ void print_flow_key(struct flow_key *key)
 
 void print_hop_key(struct hop_key *key)
 {
-	//fprintf(stdout, "Hop Key:\n");
-	//print_flow_key(&(key->flow_key));
-	fprintf(stdout, "\thop_index: %X\n", key->hop_index);
+	if (vDebugLevel > 2)
+	{
+		//fprintf(stdout, "Hop Key:\n");
+		//print_flow_key(&(key->flow_key));
+		fprintf(stdout, "\thop_index: %X\n", key->hop_index);
+	}
 }
 
 #elif defined(USING_PERF_EVENT_ARRAY1)
@@ -708,13 +735,32 @@ void check_req(http_s *h, char aResp[])
 				system(aNicSettingFromHttp);
 			}
 			else
+				if (strstr(pReqData,"GET /-d#"))
 				{
-					strcpy(aResp,"Received something else!!!\n");
+					int vNewDebugLevel = 0;
+					/* Change debug level of Tuning Module */
+					char *p = (pReqData + sizeof("GET /-d#")) - 1;
+					if (isdigit(*p))
+					{
+						aNumber[count] = *p;
+					}
+	
+					vNewDebugLevel = atoi(aNumber);
+					sprintf(aResp,"Changed debug level of Tuning Module from %d to %d!\n", vDebugLevel, vNewDebugLevel);
 		
 					gettime(&clk, ctime_buf);
-					fprintf(tunLogPtr,"%s %s: ***Received some kind of request from Http Client***\n", ctime_buf, phase2str(current_phase));
-					fprintf(tunLogPtr,"%s %s: ***Applying some kind of request***\n", ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change debug level of Tuning Module from %d to %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel, vNewDebugLevel);
+					vDebugLevel = vNewDebugLevel;
+					fprintf(tunLogPtr,"%s %s: ***New debug level is %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel);
 				}
+				else
+					{
+						strcpy(aResp,"Received something else!!!\n");
+		
+						gettime(&clk, ctime_buf);
+						fprintf(tunLogPtr,"%s %s: ***Received some kind of request from Http Client***\n", ctime_buf, phase2str(current_phase));
+						fprintf(tunLogPtr,"%s %s: ***Applying some kind of request***\n", ctime_buf, phase2str(current_phase));
+					}
 
 	fflush(tunLogPtr);
 return;
@@ -791,14 +837,17 @@ void * fDoRunGetThresholds(void * vargp)
 	int before = 0;
 	int now = 0;
 	time_t secs_passed = 1;
+	unsigned long rx_missed_errs_before, rx_missed_errs_now, rx_missed_errs_tot;
 	unsigned long rx_before, rx_now, rx_bytes_tot;
 	unsigned long tx_before, tx_now, tx_bytes_tot;
 	char try[1024];
 	int stage = 0;
 
+	rx_missed_errs_before = rx_missed_errs_now = rx_missed_errs_tot = 0;
 	rx_before =  rx_now = rx_bytes_tot = rx_bits_per_sec = 0;
 	tx_before =  tx_now =  tx_bytes_tot = tx_bits_per_sec = 0;
-	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%S");
+	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; $rx_missed_errors = $rtnl->rx_missed_errors; printf(\"%s %s %s\\n\", $tx_bytes, $rx_bytes, $rx_missed_errors); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%lu","%S");
+	/* fix for kfunc below too */
 	/*sprintf(try,"bpftrace -e \'BEGIN { @name;} kfunc:dev_get_stats { $nd = (struct net_device *) args->dev; @name = $nd->name; } kretfunc:dev_get_stats /@name == \"%s\"/ { $nd = (struct net_device *) args->dev; $rtnl = (struct rtnl_link_stats64 *) args->storage; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%S");*/
 
 start:
@@ -823,7 +872,7 @@ start:
 
  		if (fgets(buffer, 128, pipe) != NULL)
 		{
-			sscanf(buffer,"%lu %lu", &tx_before, &rx_before);
+			sscanf(buffer,"%lu %lu %lu", &tx_before, &rx_before, &rx_missed_errs_before);
 			fgets(buffer, 128, pipe);
 			sscanf(buffer,"%d", &before);
 			pclose(pipe);
@@ -857,12 +906,13 @@ start:
 			}
 		if (fgets(buffer, 128, pipe) != NULL)
 		{
-			sscanf(buffer,"%lu %lu", &tx_now, &rx_now);
+			sscanf(buffer,"%lu %lu %lu", &tx_now, &rx_now, &rx_missed_errs_now);
 			fgets(buffer, 128, pipe);
 			sscanf(buffer,"%d", &now);
 
 			tx_bytes_tot =  tx_now - tx_before;
 			rx_bytes_tot =  rx_now - rx_before;
+			rx_missed_errs_tot = rx_missed_errs_now - rx_missed_errs_before; 
 
 			if (now < before) //seconds started over
 			{
@@ -876,8 +926,10 @@ start:
 #if 1
 			tx_bits_per_sec = ((8 * tx_bytes_tot) / 1024) / secs_passed;
 			rx_bits_per_sec = ((8 * rx_bytes_tot) / 1024) / secs_passed;;
-			//printf("TX %s: %lu kb/s RX %s: %lu kb/s, secs_passed %lu\n", netDevice, tx_bits_per_sec, netDevice, rx_bits_per_sec, secs_passed);
-
+			if (vDebugLevel > 2)
+			{
+				printf("DEV %s: TX : %lu kb/s RX : %lu kb/s, RX_MISD_ERRS/s : %lu, secs_passed %lu\n", netDevice, tx_bits_per_sec, rx_bits_per_sec, rx_missed_errs_tot/secs_passed, secs_passed);
+			}
 			pclose(pipe);
 			break;
 }
