@@ -6,7 +6,8 @@ static void on_response(http_s *h);
 static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nPlease use \"tuncli -t\" to apply tunings that were recommended. \
 		       \nPlease use \"tuncli -b rx [value]\" to change RX ring buffer size of the NIC. \
-		       \nPlease use \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC.\n";
+		       \nPlease use \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC. \
+		       \nPlease use \"tuncli -d [value]\" to change the debug value of the Tuning Module. Values range from 0 to 4.\n";
 
 int main(int argc, const char *argv[]) 
 {
@@ -27,7 +28,7 @@ int main(int argc, const char *argv[])
 	char *p = 0;
 	char setting[256];
 
-	if (argc != 2 && argc != 4)
+	if (argc < 2 || argc > 4)
 		goto leave;
 
 	if ((strcmp(argv[1],"-t") == 0) && argc == 2)
@@ -41,6 +42,16 @@ int main(int argc, const char *argv[])
 			sprintf(aSecondPart,"%s#%s#%s",argv[1], argv[2],argv[3]);
 			goto carry_on;
 		}
+		else
+			if ((strcmp(argv[1],"-d") == 0) && argc == 3)
+			{
+				if ((strcmp(argv[2],"0") == 0) || (strcmp(argv[2],"1") == 0) || (strcmp(argv[2],"2") == 0) || (strcmp(argv[2],"3") == 0) || (strcmp(argv[2],"4") == 0))
+				{
+					sprintf(aSecondPart,"%s#%s",argv[1], argv[2]);
+					goto carry_on;
+				}
+				/* fall thru */
+			}
 	
 	goto leave;
 
