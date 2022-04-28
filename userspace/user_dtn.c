@@ -134,8 +134,8 @@ struct threshold_maps
 #define QUEUE_OCCUPANCY_DELTA 80
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
-#define HOP_LATENCY_DELTA 100000 //can try 60000 //50000 should show issues
-#define FLOW_LATENCY_DELTA 200000 //can try 90000 ok so far with MSS set with 4 hops of metadata //50000 should show issues
+#define HOP_LATENCY_DELTA 100000 
+#define FLOW_LATENCY_DELTA 220000 
 #define QUEUE_OCCUPANCY_DELTA 5000 //can try 4000 //25000 ok when no MSS set - we currently set MSS to 7500
 #define FLOW_SINK_TIME_DELTA 4000000000
 #endif
@@ -231,6 +231,16 @@ exit_program: {
 }
 
 static __u32 flow_sink_time_threshold = 0;
+static __u32 Qinfo = 0;
+static __u32 ingress_time = 0;
+static __u32 egress_time = 0;
+static __u32 hop_hop_latency_threshold = 0;
+void EvaluateQOcc_and_HopDelay(void)
+{
+
+	return;
+}
+
 void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 {
 	void *data_end = data + size;
@@ -261,24 +271,44 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	{
 		struct int_hop_metadata *hop_metadata_ptr = data + data_offset;
 		data_offset += sizeof(struct int_hop_metadata);
-	if (vDebugLevel > 2)
-	{
 
-//		fprintf(stdout, "switch_id = %u\n",ntohl(hop_metadata_ptr->switch_id));
-//		fprintf(stdout, "ingress_port_id = %d\n",ntohs(hop_metadata_ptr->ingress_port_id));
-//		fprintf(stdout, "egress_port_id = %d\n",ntohs(hop_metadata_ptr->egress_port_id));
-//		fprintf(stdout, "hop_latency = %u\n",ntohl(hop_metadata_ptr->hop_latency));
-		fprintf(stdout, "Qinfo = %u\n",ntohl(hop_metadata_ptr->queue_info) & 0xffffff);
-		fprintf(stdout, "ingress_time = %u\n",ntohl(hop_metadata_ptr->ingress_time));
-		fprintf(stdout, "egress_time = %u\n",ntohl(hop_metadata_ptr->egress_time));
-		fprintf(stdout, "hop_hop_latency_threshold = %u\n",ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time));
-	}
-
-		if (vDebugLevel > 1)
+		Qinfo = ntohl(hop_metadata_ptr->queue_info) & 0xffffff;
+		ingress_time = ntohl(hop_metadata_ptr->ingress_time);
+		egress_time = ntohl(hop_metadata_ptr->egress_time);
+		hop_hop_latency_threshold = egress_time - ingress_time;
+		if (vDebugLevel > 2)
 		{
-			if ((ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time)) > HOP_LATENCY_DELTA)
-				fprintf(tunLogPtr, "***hop_hop_latency_threshold = %u\n", ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time));
+
+//			fprintf(stdout, "switch_id = %u\n",ntohl(hop_metadata_ptr->switch_id));
+//			fprintf(stdout, "ingress_port_id = %d\n",ntohs(hop_metadata_ptr->ingress_port_id));
+//			fprintf(stdout, "egress_port_id = %d\n",ntohs(hop_metadata_ptr->egress_port_id));
+//			fprintf(stdout, "hop_latency = %u\n",ntohl(hop_metadata_ptr->hop_latency));
+			fprintf(stdout, "Qinfo = %u\n",Qinfo);
+			fprintf(stdout, "ingress_time = %u\n",ingress_time);
+			fprintf(stdout, "egress_time = %u\n",egress_time);
+			fprintf(stdout, "hop_hop_latency_threshold = %u\n",hop_hop_latency_threshold);
 		}
+
+		if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) && (Qinfo > QUEUE_OCCUPANCY_DELTA))
+		{
+			EvaluateQOcc_and_HopDelay();
+			if (vDebugLevel > 1)
+			{
+				fprintf(tunLogPtr, "***hop_hop_latency_threshold = %u\n", hop_hop_latency_threshold);
+				fprintf(tunLogPtr, "***Qinfo = %u\n", Qinfo);
+			}
+		}
+		else
+			if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) || (Qinfo > QUEUE_OCCUPANCY_DELTA))
+			{
+				if (vDebugLevel > 1)
+				{
+					if (hop_hop_latency_threshold > HOP_LATENCY_DELTA)
+						fprintf(tunLogPtr, "***hop_hop_latency_threshold = %u\n", hop_hop_latency_threshold);
+					else
+						fprintf(tunLogPtr, "***Qinfo = %u\n", Qinfo);
+				}
+			}
 
 		struct hop_thresholds hop_threshold_update = {
 			ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time),
@@ -294,14 +324,14 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			__u32 ingress_time = ntohl(hop_metadata_ptr->ingress_time);
 			flow_threshold_update.sink_time_threshold = ingress_time;; 
 
-		if (vDebugLevel > 2)
-			fprintf(stdout, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
+			if (vDebugLevel > 2)
+				fprintf(stdout, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
 
-		if (vDebugLevel > 3)
-		{
-			if ((ingress_time - flow_sink_time_threshold) > FLOW_SINK_TIME_DELTA)
-				fprintf(tunLogPtr, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
-		}
+			if (vDebugLevel > 3)
+			{
+				if ((ingress_time - flow_sink_time_threshold) > FLOW_SINK_TIME_DELTA)
+					fprintf(tunLogPtr, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
+			}
 
 			flow_sink_time_threshold = ingress_time;	
 		}
@@ -332,6 +362,8 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
 {
 	fprintf(stderr, "Missed %llu sets of packet metadata.\n", cnt);
+	fprintf(tunLogPtr, "Missed %llu sets of packet metadata.\n", cnt);
+	fflush(tunLogPtr);
 }
 
 void print_flow_key(struct flow_key *key)
