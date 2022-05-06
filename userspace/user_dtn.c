@@ -61,7 +61,7 @@ int msleep(long msec)
 
 char netDevice[128];
 static unsigned long rx_bits_per_sec = 0, tx_bits_per_sec = 0;
-static int vDebugLevel = 1; //Print regular messages to log file
+static int vDebugLevel = 0; //Print regular messages to log file
 
 #define SIGINT_MSG "SIGINT received.\n"
 void sig_int_handler(int signum, siginfo_t *info, void *ptr)
@@ -126,6 +126,21 @@ struct threshold_maps
 	int flow_counters;
 };
 
+#define MAX_TUNING_ACTIVITIES_PER_FLOW	10
+#define MAX_SIZE_TUNING_STRING		1001
+#define NUM_OF_FLOWS_TO_KEEP_TRACK_OF	4
+typedef struct {
+        int num_tuning_activities;
+	char what_was_done[MAX_TUNING_ACTIVITIES_PER_FLOW][MAX_SIZE_TUNING_STRING];
+} sFlowCounters_t;
+
+static __u32 flow_sink_time_threshold = 0;
+static __u32 Qinfo = 0;
+static __u32 ingress_time = 0;
+static __u32 egress_time = 0;
+static __u32 hop_hop_latency_threshold = 0;
+static int vFlowCount = 0;
+static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 #define MAP_DIR "/sys/fs/bpf/test_maps"
 #if 0
 //original stuff
@@ -230,14 +245,32 @@ exit_program: {
 	}
 }
 
-static __u32 flow_sink_time_threshold = 0;
-static __u32 Qinfo = 0;
-static __u32 ingress_time = 0;
-static __u32 egress_time = 0;
-static __u32 hop_hop_latency_threshold = 0;
-void EvaluateQOcc_and_HopDelay(void)
+static int gFlowCountUsed = 0;
+#define EVA_THRESHOLD	100
+void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 {
+	static long long count = 0;
+	char activity[1000];
+	time_t clk;
+	char ctime_buf[27];
+	
+	if ((count % EVA_THRESHOLD) == 0)
+	{
+		
+		gettime(&clk, ctime_buf);
+		sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something***vFlowcount = %d, regcount = %lld, num_tuning_activty = %d", ctime_buf, phase2str(current_phase), hop_key_hop_index, vFlowCount, count, sFlowCounters[vFlowCount].num_tuning_activities + 1);
 
+		if (vDebugLevel > 0)
+			printf("%s\n",activity); //special case for testing
+
+		strcpy(sFlowCounters[vFlowCount].what_was_done[sFlowCounters[vFlowCount].num_tuning_activities], activity);
+		(sFlowCounters[vFlowCount].num_tuning_activities)++;
+		if (sFlowCounters[vFlowCount].num_tuning_activities >= MAX_TUNING_ACTIVITIES_PER_FLOW)
+			sFlowCounters[vFlowCount].num_tuning_activities = 0;
+		gFlowCountUsed = 1;	
+	}
+	
+	count++;
 	return;
 }
 
@@ -290,10 +323,10 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			fprintf(stdout, "egress_time = %u\n",egress_time);
 			fprintf(stdout, "hop_hop_latency_threshold = %u\n",hop_hop_latency_threshold);
 		}
-
+#if 1
 		if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) && (Qinfo > QUEUE_OCCUPANCY_DELTA))
 		{
-			EvaluateQOcc_and_HopDelay();
+			EvaluateQOcc_and_HopDelay(hop_key.hop_index);
 			if (vDebugLevel > 1)
 			{
 				gettime(&clk, ctime_buf);
@@ -313,7 +346,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 						fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
 				}
 			}
-
+#endif
 		struct hop_thresholds hop_threshold_update = {
 			ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time),
 			HOP_LATENCY_DELTA,
@@ -342,11 +375,13 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 			flow_sink_time_threshold = ingress_time;	
 		}
+		
 		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		flow_hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		vCurrent_Rtt += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		print_hop_key(&hop_key);
 		hop_key.hop_index++;
+
 	}
 
 	flow_threshold_update.total_hops = hop_key.hop_index;
@@ -367,6 +402,13 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		}
 
 		fflush(tunLogPtr);
+	}
+
+	if (gFlowCountUsed)
+	{	
+		if (++vFlowCount == NUM_OF_FLOWS_TO_KEEP_TRACK_OF) vFlowCount = 0;
+		sFlowCounters[vFlowCount].num_tuning_activities = 0;
+		gFlowCountUsed = 0;
 	}
 }
 
@@ -1129,6 +1171,7 @@ int main(int argc, char **argv)
 		exit(-8);
 	}
 #endif
+	memset(sFlowCounters,0,sizeof(sFlowCounters));
 
 	fflush(tunLogPtr);
 
