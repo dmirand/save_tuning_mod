@@ -135,7 +135,7 @@ struct threshold_maps
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
 #define HOP_LATENCY_DELTA 100000 
-#define FLOW_LATENCY_DELTA 220000 
+#define FLOW_LATENCY_DELTA 250000 
 #define QUEUE_OCCUPANCY_DELTA 5000 //can try 4000 //25000 ok when no MSS set - we currently set MSS to 7500
 #define FLOW_SINK_TIME_DELTA 4000000000
 #endif
@@ -248,6 +248,8 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	struct hop_key hop_key;
 	double vCurrent_Rtt = 0.0;
 	long long flow_hop_latency_threshold = 0;
+	time_t clk;
+	char ctime_buf[27];
 
 	if(data + data_offset + sizeof(hop_key) > data_end) return;
 
@@ -294,8 +296,9 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			EvaluateQOcc_and_HopDelay();
 			if (vDebugLevel > 1)
 			{
-				fprintf(tunLogPtr, "***hop_hop_latency_threshold = %u\n", hop_hop_latency_threshold);
-				fprintf(tunLogPtr, "***Qinfo = %u\n", Qinfo);
+				gettime(&clk, ctime_buf);
+				fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+				fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
 			}
 		}
 		else
@@ -303,10 +306,11 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			{
 				if (vDebugLevel > 1)
 				{
+					gettime(&clk, ctime_buf);
 					if (hop_hop_latency_threshold > HOP_LATENCY_DELTA)
-						fprintf(tunLogPtr, "***hop_hop_latency_threshold = %u\n", hop_hop_latency_threshold);
+						fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
 					else
-						fprintf(tunLogPtr, "***Qinfo = %u\n", Qinfo);
+						fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
 				}
 			}
 
@@ -330,7 +334,10 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			if (vDebugLevel > 3)
 			{
 				if ((ingress_time - flow_sink_time_threshold) > FLOW_SINK_TIME_DELTA)
-					fprintf(tunLogPtr, "***flow_sink_time = %u\n", ingress_time - flow_sink_time_threshold);
+				{
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr, "%s %s: ***flow_sink_time = %u\n", ctime_buf, phase2str(current_phase), ingress_time - flow_sink_time_threshold);
+				}
 			}
 
 			flow_sink_time_threshold = ingress_time;	
@@ -354,15 +361,23 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	if (vDebugLevel > 1)
 	{
 		if (flow_hop_latency_threshold > FLOW_LATENCY_DELTA)
-			fprintf(tunLogPtr, "***flow_hop_latency_threshold = %lld\n", flow_hop_latency_threshold);
+		{
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr, "%s %s: ***flow_hop_latency_threshold = %lld\n", ctime_buf, phase2str(current_phase), flow_hop_latency_threshold);
+		}
+
 		fflush(tunLogPtr);
 	}
 }
 
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
 {
+	time_t clk;
+	char ctime_buf[27];
+
 	fprintf(stderr, "Missed %llu sets of packet metadata.\n", cnt);
-	fprintf(tunLogPtr, "Missed %llu sets of packet metadata.\n", cnt);
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, "%s %s: Missed %llu sets of packet metadata.\n", ctime_buf, phase2str(current_phase), cnt);
 	fflush(tunLogPtr);
 }
 
@@ -958,19 +973,20 @@ start:
 #if 1
 			tx_bits_per_sec = ((8 * tx_bytes_tot) / 1024) / secs_passed;
 			rx_bits_per_sec = ((8 * rx_bytes_tot) / 1024) / secs_passed;;
+			pclose(pipe);
+
 			if (vDebugLevel > 2)
 			{
 				printf("DEV %s: TX : %lu kb/s RX : %lu kb/s, RX_MISD_ERRS/s : %lu, secs_passed %lu\n", netDevice, tx_bits_per_sec, rx_bits_per_sec, rx_missed_errs_tot/secs_passed, secs_passed);
 			}
-			pclose(pipe);
 			break;
 }
 #else
 			tx_bits_per_sec = ((tx_bytes_tot) / 1024) / secs_passed; //really bytes per sec
 			rx_bits_per_sec = ((rx_bytes_tot) / 1024) / secs_passed; //really bytes per sec
-			printf("RX eno2: %lu KB/s TX eno2: %lu KB/s\n", rx_bits_per_sec, tx_bits_per_sec);
 			pclose(pipe);
-			stage = 0;
+			printf("RX eno2: %lu KB/s TX eno2: %lu KB/s\n", rx_bits_per_sec, tx_bits_per_sec);
+//			stage = 0;
 			break;
 #endif
 			else
