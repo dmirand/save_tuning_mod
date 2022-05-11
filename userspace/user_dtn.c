@@ -163,6 +163,34 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size);
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt);
 void print_hop_key(struct hop_key *key);
 
+#define SIGALRM_MSG "SIGALRM received.\n"
+struct itimerval sStartTimer;
+struct itimerval sDisableTimer;
+int vTimerIsSet = 0;
+
+void sig_alrm_handler(int signum, siginfo_t *info, void *ptr)
+{
+	time_t clk;
+	char ctime_buf[27];
+	gettime(&clk, ctime_buf);
+	printf("%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy and HopDelays. Time to do something***\n",ctime_buf, phase2str(current_phase)); 
+	//***Do something here ***//
+	vTimerIsSet = 0;
+//	write(STDERR_FILENO, SIGALRM_MSG, sizeof(SIGALRM_MSG));
+//	exit(0);
+}
+
+void catch_sigalrm()
+{
+	static struct sigaction _sigact;
+
+	memset(&_sigact, 0, sizeof(_sigact));
+	_sigact.sa_sigaction = sig_alrm_handler;
+	_sigact.sa_flags = SA_SIGINFO;
+
+	sigaction(SIGALRM, &_sigact, NULL);
+}
+	
 void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 {
 	time_t clk;
@@ -171,6 +199,15 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	int int_dscp_map;
 	struct perf_buffer *pb;
 	struct threshold_maps maps = {};
+
+	memset (&sStartTimer,0,sizeof(struct itimerval));
+	memset (&sDisableTimer,0,sizeof(struct itimerval));
+
+	//sStartTimer.it_value.tv_sec = gInterval; //global evaluation timer
+	sStartTimer.it_value.tv_usec = gInterval; //global evaluation timer
+
+	catch_sigalrm(); //set up SIGALRM catcher
+
 open_maps: {
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: Opening maps.\n", ctime_buf, phase2str(current_phase));
@@ -253,7 +290,23 @@ void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 	char activity[1000];
 	time_t clk;
 	char ctime_buf[27];
-	
+	int vRetTimer;
+
+	if (!vTimerIsSet)
+	{
+		vRetTimer = setitimer(ITIMER_REAL, &sStartTimer, (struct itimerval *)NULL);	
+		if (!vRetTimer)
+		{
+			vTimerIsSet = 1;
+
+			if (vDebugLevel > 0)
+			{
+				gettime(&clk, ctime_buf);
+				printf("%s %s: ***Timer set to %d microseconds for Queue Occupancy and HopDelay over threshholds***\n",ctime_buf, phase2str(current_phase), gInterval); 
+			}
+		}
+	}
+
 	if ((count % EVA_THRESHOLD) == 0)
 	{
 		
@@ -335,15 +388,23 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			}
 		}
 		else
-			if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) || (Qinfo > QUEUE_OCCUPANCY_DELTA))
 			{
-				if (vDebugLevel > 1)
+				if (vTimerIsSet)
 				{
-					gettime(&clk, ctime_buf);
-					if (hop_hop_latency_threshold > HOP_LATENCY_DELTA)
-						fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
-					else
-						fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
+					setitimer(ITIMER_REAL, &sDisableTimer, (struct itimerval *)NULL);	
+					vTimerIsSet = 0;
+				}
+
+				if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) || (Qinfo > QUEUE_OCCUPANCY_DELTA))
+				{
+					if (vDebugLevel > 1)
+					{
+						gettime(&clk, ctime_buf);
+						if (hop_hop_latency_threshold > HOP_LATENCY_DELTA)
+							fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+						else
+							fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
+					}
 				}
 			}
 #endif
@@ -575,7 +636,6 @@ void * fDoRunBpfCollectionPerfEventArray(void * vargp)
 	while (1) 
 	{
 		err = perf_buffer__poll(pb, 100 /* timeout, ms */);
-		//sleep(gInterval);
 	}
 
 cleanup:
@@ -705,6 +765,7 @@ void * fDoRunBpfCollectionRingBuf(void * vargp)
 	while (1) 
 	{
 		ring_buffer__consume(rb);
+		//must fix for sleep - gInterval went to microsecs instead of secs
 		sleep(gInterval);
 	}
     	
@@ -747,6 +808,7 @@ void * fDoRunTalkToKernel(void * vargp)
 			fprintf(tunLogPtr,"%s %s: ***message read from kernel module = ***%s***\n", ctime_buf, phase2str(current_phase), aMessage);
 
 		fflush(tunLogPtr);
+		//must fix for sleep - gInterval went to microsecs instead of secs
 		sleep(gInterval);
 	}
 }
