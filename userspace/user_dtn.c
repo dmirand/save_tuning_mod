@@ -150,8 +150,8 @@ static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
 #define HOP_LATENCY_DELTA 100000 
-#define FLOW_LATENCY_DELTA 250000 
-#define QUEUE_OCCUPANCY_DELTA 5000 //can try 4000 //25000 ok when no MSS set - we currently set MSS to 7500
+#define FLOW_LATENCY_DELTA 280000 
+#define QUEUE_OCCUPANCY_DELTA 6000 //can try 5700 //25000 ok when no MSS set - we currently set MSS to 7500
 #define FLOW_SINK_TIME_DELTA 4000000000
 #endif
 #define INT_DSCP (0x17)
@@ -162,6 +162,7 @@ static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size);
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt);
 void print_hop_key(struct hop_key *key);
+void record_activity(void); 
 
 #define SIGALRM_MSG "SIGALRM received.\n"
 struct itimerval sStartTimer;
@@ -173,9 +174,10 @@ void sig_alrm_handler(int signum, siginfo_t *info, void *ptr)
 	time_t clk;
 	char ctime_buf[27];
 	gettime(&clk, ctime_buf);
-	printf("%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy and HopDelays. Time to do something***\n",ctime_buf, phase2str(current_phase)); 
+	fprintf(tunLogPtr, "%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy and HopDelays. Time to do something***\n",ctime_buf, phase2str(current_phase)); 
 	//***Do something here ***//
 	vTimerIsSet = 0;
+	record_activity();
 //	write(STDERR_FILENO, SIGALRM_MSG, sizeof(SIGALRM_MSG));
 //	exit(0);
 }
@@ -283,11 +285,10 @@ exit_program: {
 }
 
 static int gFlowCountUsed = 0;
-#define EVA_THRESHOLD	100
+static __u32 curr_hop_key_hop_index = 0;
+
 void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 {
-	static long long count = 0;
-	char activity[1000];
 	time_t clk;
 	char ctime_buf[27];
 	int vRetTimer;
@@ -298,7 +299,7 @@ void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 		if (!vRetTimer)
 		{
 			vTimerIsSet = 1;
-
+			curr_hop_key_hop_index = hop_key_hop_index;
 			if (vDebugLevel > 0)
 			{
 				gettime(&clk, ctime_buf);
@@ -307,23 +308,27 @@ void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 		}
 	}
 
-	if ((count % EVA_THRESHOLD) == 0)
-	{
-		
-		gettime(&clk, ctime_buf);
-		sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something***vFlowcount = %d, regcount = %lld, num_tuning_activty = %d", ctime_buf, phase2str(current_phase), hop_key_hop_index, vFlowCount, count, sFlowCounters[vFlowCount].num_tuning_activities + 1);
+	return;
+}
 
-		if (vDebugLevel > 0)
-			printf("%s\n",activity); //special case for testing
+void record_activity(void)
+{
+	char activity[1000];
+	time_t clk;
+	char ctime_buf[27];
 
-		strcpy(sFlowCounters[vFlowCount].what_was_done[sFlowCounters[vFlowCount].num_tuning_activities], activity);
-		(sFlowCounters[vFlowCount].num_tuning_activities)++;
-		if (sFlowCounters[vFlowCount].num_tuning_activities >= MAX_TUNING_ACTIVITIES_PER_FLOW)
-			sFlowCounters[vFlowCount].num_tuning_activities = 0;
-		gFlowCountUsed = 1;	
-	}
-	
-	count++;
+	gettime(&clk, ctime_buf);
+	sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something***vFlowcount = %d, num_tuning_activty = %d", ctime_buf, phase2str(current_phase), curr_hop_key_hop_index, vFlowCount, sFlowCounters[vFlowCount].num_tuning_activities + 1);
+
+	fprintf(tunLogPtr,"%s\n",activity); //special case for testing
+
+	strcpy(sFlowCounters[vFlowCount].what_was_done[sFlowCounters[vFlowCount].num_tuning_activities], activity);
+	(sFlowCounters[vFlowCount].num_tuning_activities)++;
+	if (sFlowCounters[vFlowCount].num_tuning_activities >= MAX_TUNING_ACTIVITIES_PER_FLOW)
+		sFlowCounters[vFlowCount].num_tuning_activities = 0;
+
+	gFlowCountUsed = 1;	
+
 	return;
 }
 
@@ -478,7 +483,7 @@ void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
 	time_t clk;
 	char ctime_buf[27];
 
-	fprintf(stderr, "Missed %llu sets of packet metadata.\n", cnt);
+	//fprintf(stderr, "Missed %llu sets of packet metadata.\n", cnt);
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: Missed %llu sets of packet metadata.\n", ctime_buf, phase2str(current_phase), cnt);
 	fflush(tunLogPtr);

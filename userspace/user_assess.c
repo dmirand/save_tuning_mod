@@ -2239,9 +2239,11 @@ int user_assess(int argc, char **argv)
 
 	fDoSystemTuning();
 
+	fDoBiosTuning();
+
 	fDoNicTuning();
 
-	fDoBiosTuning();
+	//fDoBiosTuning();
 
 	gettime(&clk, ctime_buf);
 	current_phase = LEARNING;
