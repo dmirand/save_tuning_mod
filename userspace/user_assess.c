@@ -24,7 +24,7 @@ void fDoNicTuning(void);
 void fDoSystemtuning(void);
 void fDo_lshw(void);
 
-int gInterval = 2; //default
+int gInterval = 2000; //default
 int gAPI_listen_port = 5523; //default listening port
 int netDeviceSpeed = 0;
 int numaNode = 0;
@@ -64,7 +64,7 @@ typedef struct {
 	char cfg_value[32];
 } sUserValues_t[NUMUSERVALUES];
 
-sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
+sUserValues_t userValues = {{"evaluation_timer", "2000", "-1"},
 			{"learning_mode_only","y","-1"},
 			{"API_listen_port","5523","-1"},
 			{"apply_default_system_tuning","n","-1"},
@@ -146,7 +146,7 @@ void fDoGetUserCfgValues(void)
 		if (strcmp(userValues[count].aUserValues,"evaluation_timer") == 0)
 		{
 			int cfg_val = atoi(userValues[count].cfg_value);
-			if (cfg_val == -1) //wasn't set properly
+			if (cfg_val == 0) //wasn't set properly - error
 				gInterval = atoi(userValues[count].default_val);
 			else
 				gInterval = cfg_val;
@@ -185,7 +185,7 @@ void fDoGetUserCfgValues(void)
 								if (strcmp(userValues[count].aUserValues,"API_listen_port") == 0)
 								{
 									int cfg_val = atoi(userValues[count].cfg_value);
-									if (cfg_val == -1) //wasn't set properly
+									if (cfg_val == 0) //wasn't set properly - error
 										gAPI_listen_port = atoi(userValues[count].default_val);
 									else
 										gAPI_listen_port = cfg_val;
@@ -193,7 +193,7 @@ void fDoGetUserCfgValues(void)
 	}
 
 	gettime(&clk, ctime_buf);
-	//fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d***\n", ctime_buf, gInterval);
+	fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d microseconds***\n", ctime_buf, gInterval);
 	free(line); //must free
 	return;
 }
@@ -1111,7 +1111,7 @@ void fDoGetDeviceCap(void)
 					sValue[strlen(sValue)-1] = 0;
 
 				cfg_val = atoi(sValue);
-				if (cfg_val == 0) //wasn't set properly
+				if (cfg_val == 0) //wasn't set properly - error
 				{
 					int save_errno = errno;
 					gettime(&clk, ctime_buf);
@@ -1869,7 +1869,7 @@ void fDoMTU()
 					sValue[strlen(sValue)-1] = 0;
 
 				cfg_val = atoi(sValue);
-				if (cfg_val == 0) //wasn't set properly
+				if (cfg_val == 0) //wasn't set properly - error
 				{
 					int save_errno = errno;
 					gettime(&clk, ctime_buf);
@@ -2239,9 +2239,11 @@ int user_assess(int argc, char **argv)
 
 	fDoSystemTuning();
 
+	fDoBiosTuning();
+
 	fDoNicTuning();
 
-	fDoBiosTuning();
+	//fDoBiosTuning();
 
 	gettime(&clk, ctime_buf);
 	current_phase = LEARNING;

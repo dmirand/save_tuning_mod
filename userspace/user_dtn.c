@@ -61,7 +61,7 @@ int msleep(long msec)
 
 char netDevice[128];
 static unsigned long rx_bits_per_sec = 0, tx_bits_per_sec = 0;
-static int vDebugLevel = 1; //Print regular messages to log file
+static int vDebugLevel = 0; //Print regular messages to log file
 
 #define SIGINT_MSG "SIGINT received.\n"
 void sig_int_handler(int signum, siginfo_t *info, void *ptr)
@@ -126,6 +126,21 @@ struct threshold_maps
 	int flow_counters;
 };
 
+#define MAX_TUNING_ACTIVITIES_PER_FLOW	10
+#define MAX_SIZE_TUNING_STRING		1001
+#define NUM_OF_FLOWS_TO_KEEP_TRACK_OF	4
+typedef struct {
+        int num_tuning_activities;
+	char what_was_done[MAX_TUNING_ACTIVITIES_PER_FLOW][MAX_SIZE_TUNING_STRING];
+} sFlowCounters_t;
+
+static __u32 flow_sink_time_threshold = 0;
+static __u32 Qinfo = 0;
+static __u32 ingress_time = 0;
+static __u32 egress_time = 0;
+static __u32 hop_hop_latency_threshold = 0;
+static int vFlowCount = 0;
+static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 #define MAP_DIR "/sys/fs/bpf/test_maps"
 #if 0
 //original stuff
@@ -135,8 +150,8 @@ struct threshold_maps
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
 #define HOP_LATENCY_DELTA 100000 
-#define FLOW_LATENCY_DELTA 250000 
-#define QUEUE_OCCUPANCY_DELTA 5000 //can try 4000 //25000 ok when no MSS set - we currently set MSS to 7500
+#define FLOW_LATENCY_DELTA 280000 
+#define QUEUE_OCCUPANCY_DELTA 6000 //can try 5700 //25000 ok when no MSS set - we currently set MSS to 7500
 #define FLOW_SINK_TIME_DELTA 4000000000
 #endif
 #define INT_DSCP (0x17)
@@ -147,7 +162,37 @@ struct threshold_maps
 void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size);
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt);
 void print_hop_key(struct hop_key *key);
+void record_activity(void); 
 
+#define SIGALRM_MSG "SIGALRM received.\n"
+struct itimerval sStartTimer;
+struct itimerval sDisableTimer;
+int vTimerIsSet = 0;
+
+void sig_alrm_handler(int signum, siginfo_t *info, void *ptr)
+{
+	time_t clk;
+	char ctime_buf[27];
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, "%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy and HopDelays. Time to do something***\n",ctime_buf, phase2str(current_phase)); 
+	//***Do something here ***//
+	vTimerIsSet = 0;
+	record_activity();
+//	write(STDERR_FILENO, SIGALRM_MSG, sizeof(SIGALRM_MSG));
+//	exit(0);
+}
+
+void catch_sigalrm()
+{
+	static struct sigaction _sigact;
+
+	memset(&_sigact, 0, sizeof(_sigact));
+	_sigact.sa_sigaction = sig_alrm_handler;
+	_sigact.sa_flags = SA_SIGINFO;
+
+	sigaction(SIGALRM, &_sigact, NULL);
+}
+	
 void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 {
 	time_t clk;
@@ -156,6 +201,15 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	int int_dscp_map;
 	struct perf_buffer *pb;
 	struct threshold_maps maps = {};
+
+	memset (&sStartTimer,0,sizeof(struct itimerval));
+	memset (&sDisableTimer,0,sizeof(struct itimerval));
+
+	//sStartTimer.it_value.tv_sec = gInterval; //global evaluation timer
+	sStartTimer.it_value.tv_usec = gInterval; //global evaluation timer
+
+	catch_sigalrm(); //set up SIGALRM catcher
+
 open_maps: {
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: Opening maps.\n", ctime_buf, phase2str(current_phase));
@@ -230,13 +284,50 @@ exit_program: {
 	}
 }
 
-static __u32 flow_sink_time_threshold = 0;
-static __u32 Qinfo = 0;
-static __u32 ingress_time = 0;
-static __u32 egress_time = 0;
-static __u32 hop_hop_latency_threshold = 0;
-void EvaluateQOcc_and_HopDelay(void)
+static int gFlowCountUsed = 0;
+static __u32 curr_hop_key_hop_index = 0;
+
+void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 {
+	time_t clk;
+	char ctime_buf[27];
+	int vRetTimer;
+
+	if (!vTimerIsSet)
+	{
+		vRetTimer = setitimer(ITIMER_REAL, &sStartTimer, (struct itimerval *)NULL);	
+		if (!vRetTimer)
+		{
+			vTimerIsSet = 1;
+			curr_hop_key_hop_index = hop_key_hop_index;
+			if (vDebugLevel > 0)
+			{
+				gettime(&clk, ctime_buf);
+				printf("%s %s: ***Timer set to %d microseconds for Queue Occupancy and HopDelay over threshholds***\n",ctime_buf, phase2str(current_phase), gInterval); 
+			}
+		}
+	}
+
+	return;
+}
+
+void record_activity(void)
+{
+	char activity[1000];
+	time_t clk;
+	char ctime_buf[27];
+
+	gettime(&clk, ctime_buf);
+	sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something***vFlowcount = %d, num_tuning_activty = %d", ctime_buf, phase2str(current_phase), curr_hop_key_hop_index, vFlowCount, sFlowCounters[vFlowCount].num_tuning_activities + 1);
+
+	fprintf(tunLogPtr,"%s\n",activity); //special case for testing
+
+	strcpy(sFlowCounters[vFlowCount].what_was_done[sFlowCounters[vFlowCount].num_tuning_activities], activity);
+	(sFlowCounters[vFlowCount].num_tuning_activities)++;
+	if (sFlowCounters[vFlowCount].num_tuning_activities >= MAX_TUNING_ACTIVITIES_PER_FLOW)
+		sFlowCounters[vFlowCount].num_tuning_activities = 0;
+
+	gFlowCountUsed = 1;	
 
 	return;
 }
@@ -290,10 +381,10 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			fprintf(stdout, "egress_time = %u\n",egress_time);
 			fprintf(stdout, "hop_hop_latency_threshold = %u\n",hop_hop_latency_threshold);
 		}
-
+#if 1
 		if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) && (Qinfo > QUEUE_OCCUPANCY_DELTA))
 		{
-			EvaluateQOcc_and_HopDelay();
+			EvaluateQOcc_and_HopDelay(hop_key.hop_index);
 			if (vDebugLevel > 1)
 			{
 				gettime(&clk, ctime_buf);
@@ -302,18 +393,26 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			}
 		}
 		else
-			if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) || (Qinfo > QUEUE_OCCUPANCY_DELTA))
 			{
-				if (vDebugLevel > 1)
+				if (vTimerIsSet)
 				{
-					gettime(&clk, ctime_buf);
-					if (hop_hop_latency_threshold > HOP_LATENCY_DELTA)
-						fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
-					else
-						fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
+					setitimer(ITIMER_REAL, &sDisableTimer, (struct itimerval *)NULL);	
+					vTimerIsSet = 0;
+				}
+
+				if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) || (Qinfo > QUEUE_OCCUPANCY_DELTA))
+				{
+					if (vDebugLevel > 1)
+					{
+						gettime(&clk, ctime_buf);
+						if (hop_hop_latency_threshold > HOP_LATENCY_DELTA)
+							fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+						else
+							fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
+					}
 				}
 			}
-
+#endif
 		struct hop_thresholds hop_threshold_update = {
 			ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time),
 			HOP_LATENCY_DELTA,
@@ -342,11 +441,13 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 			flow_sink_time_threshold = ingress_time;	
 		}
+		
 		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		flow_hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		vCurrent_Rtt += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		print_hop_key(&hop_key);
 		hop_key.hop_index++;
+
 	}
 
 	flow_threshold_update.total_hops = hop_key.hop_index;
@@ -368,6 +469,13 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 		fflush(tunLogPtr);
 	}
+
+	if (gFlowCountUsed)
+	{	
+		if (++vFlowCount == NUM_OF_FLOWS_TO_KEEP_TRACK_OF) vFlowCount = 0;
+		sFlowCounters[vFlowCount].num_tuning_activities = 0;
+		gFlowCountUsed = 0;
+	}
 }
 
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
@@ -375,7 +483,7 @@ void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
 	time_t clk;
 	char ctime_buf[27];
 
-	fprintf(stderr, "Missed %llu sets of packet metadata.\n", cnt);
+	//fprintf(stderr, "Missed %llu sets of packet metadata.\n", cnt);
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: Missed %llu sets of packet metadata.\n", ctime_buf, phase2str(current_phase), cnt);
 	fflush(tunLogPtr);
@@ -533,7 +641,6 @@ void * fDoRunBpfCollectionPerfEventArray(void * vargp)
 	while (1) 
 	{
 		err = perf_buffer__poll(pb, 100 /* timeout, ms */);
-		//sleep(gInterval);
 	}
 
 cleanup:
@@ -663,6 +770,7 @@ void * fDoRunBpfCollectionRingBuf(void * vargp)
 	while (1) 
 	{
 		ring_buffer__consume(rb);
+		//must fix for sleep - gInterval went to microsecs instead of secs
 		sleep(gInterval);
 	}
     	
@@ -705,6 +813,7 @@ void * fDoRunTalkToKernel(void * vargp)
 			fprintf(tunLogPtr,"%s %s: ***message read from kernel module = ***%s***\n", ctime_buf, phase2str(current_phase), aMessage);
 
 		fflush(tunLogPtr);
+		//must fix for sleep - gInterval went to microsecs instead of secs
 		sleep(gInterval);
 	}
 }
@@ -1129,6 +1238,7 @@ int main(int argc, char **argv)
 		exit(-8);
 	}
 #endif
+	memset(sFlowCounters,0,sizeof(sFlowCounters));
 
 	fflush(tunLogPtr);
 
