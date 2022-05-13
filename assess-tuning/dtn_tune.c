@@ -2438,10 +2438,12 @@ int main(int argc, char **argv)
 
 	fDoSystemTuning();
 
+	fDoBiosTuning();
+
 	if (argc == 2)
 		fDoNicTuning();
 
-	fDoBiosTuning();
+	//fDoBiosTuning();
 
 	gettime(&clk, ctime_buf);
 	current_phase = LEARNING;
