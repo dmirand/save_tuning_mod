@@ -4,10 +4,14 @@
 static void on_response(http_s *h);
 
 static char * Usage = "This is an HTTP client to talk to Tuning Module. \
-		       \nPlease use \"tuncli -t\" to apply tunings that were recommended. \
-		       \nPlease use \"tuncli -b rx [value]\" to change RX ring buffer size of the NIC. \
-		       \nPlease use \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC. \
-		       \nPlease use \"tuncli -d [value]\" to change the debug value of the Tuning Module. Values range from 0 to 4.\n";
+		       \nUse \"tuncli -t\" to apply tunings that were recommended. \
+		       \nUse \"tuncli -b rx [value]\" to change RX ring buffer size of the NIC. \
+		       \nUse \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC. \
+		       \nUse \"tuncli -d [value]\" to change the debug value of the Tuning Module. Values range from 0 to 4. \
+		       \nUse \"tuncli -ct hop_late [value]\" to change the value of the hop latency delta. \
+		       \nUse \"tuncli -ct flow_late [value]\" to change the value of the flow latency delta. \
+		       \nUse \"tuncli -ct q_occ [value]\" to change the value of the queue occupancy delta. \
+		       \nUse \"tuncli -ct flow_sink [value]\" to change the value of the flow sink time delta.\n";
 
 int main(int argc, const char *argv[]) 
 {
@@ -37,7 +41,7 @@ int main(int argc, const char *argv[])
 		goto carry_on;
 	}
 	else
-		if ((strcmp(argv[1],"-b") == 0) && argc == 4)
+		if (((strcmp(argv[1],"-b") == 0) || (strcmp(argv[1],"-ct") == 0)) && argc == 4)
 		{
 			sprintf(aSecondPart,"%s#%s#%s",argv[1], argv[2],argv[3]);
 			goto carry_on;

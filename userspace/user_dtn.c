@@ -149,10 +149,10 @@ static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 #define QUEUE_OCCUPANCY_DELTA 80
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
-#define HOP_LATENCY_DELTA 100000 
-#define FLOW_LATENCY_DELTA 280000 
-#define QUEUE_OCCUPANCY_DELTA 6000 //can try 5700 //25000 ok when no MSS set - we currently set MSS to 7500
-#define FLOW_SINK_TIME_DELTA 4000000000
+static __u32 vHOP_LATENCY_DELTA = 100000;
+static __u32 vFLOW_LATENCY_DELTA = 280000;
+static __u32 vQUEUE_OCCUPANCY_DELTA = 6000; //can try 5700 //25000 ok when no MSS set - we currently set MSS to 7500
+static __u32 vFLOW_SINK_TIME_DELTA = 4000000000;
 #endif
 #define INT_DSCP (0x17)
 
@@ -349,9 +349,9 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 	struct flow_thresholds flow_threshold_update = {
 		0,
-		FLOW_LATENCY_DELTA,
+		vFLOW_LATENCY_DELTA,
 		0,
-		FLOW_SINK_TIME_DELTA,
+		vFLOW_SINK_TIME_DELTA,
 		0
 	};
 
@@ -382,7 +382,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			fprintf(stdout, "hop_hop_latency_threshold = %u\n",hop_hop_latency_threshold);
 		}
 #if 1
-		if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) && (Qinfo > QUEUE_OCCUPANCY_DELTA))
+		if ((hop_hop_latency_threshold > vHOP_LATENCY_DELTA) && (Qinfo > vQUEUE_OCCUPANCY_DELTA))
 		{
 			EvaluateQOcc_and_HopDelay(hop_key.hop_index);
 			if (vDebugLevel > 1)
@@ -400,12 +400,12 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 					vTimerIsSet = 0;
 				}
 
-				if ((hop_hop_latency_threshold > HOP_LATENCY_DELTA) || (Qinfo > QUEUE_OCCUPANCY_DELTA))
+				if ((hop_hop_latency_threshold > vHOP_LATENCY_DELTA) || (Qinfo > vQUEUE_OCCUPANCY_DELTA))
 				{
 					if (vDebugLevel > 1)
 					{
 						gettime(&clk, ctime_buf);
-						if (hop_hop_latency_threshold > HOP_LATENCY_DELTA)
+						if (hop_hop_latency_threshold > vHOP_LATENCY_DELTA)
 							fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
 						else
 							fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
@@ -415,9 +415,9 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 #endif
 		struct hop_thresholds hop_threshold_update = {
 			ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time),
-			HOP_LATENCY_DELTA,
+			vHOP_LATENCY_DELTA,
 			ntohl(hop_metadata_ptr->queue_info) & 0xffffff,
-			QUEUE_OCCUPANCY_DELTA,
+			vQUEUE_OCCUPANCY_DELTA,
 			ntohl(hop_metadata_ptr->switch_id)
 		};
 
@@ -432,7 +432,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 			if (vDebugLevel > 3)
 			{
-				if ((ingress_time - flow_sink_time_threshold) > FLOW_SINK_TIME_DELTA)
+				if ((ingress_time - flow_sink_time_threshold) > vFLOW_SINK_TIME_DELTA)
 				{
 					gettime(&clk, ctime_buf);
 					fprintf(tunLogPtr, "%s %s: ***flow_sink_time = %u\n", ctime_buf, phase2str(current_phase), ingress_time - flow_sink_time_threshold);
@@ -461,7 +461,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	
 	if (vDebugLevel > 1)
 	{
-		if (flow_hop_latency_threshold > FLOW_LATENCY_DELTA)
+		if (flow_hop_latency_threshold > vFLOW_LATENCY_DELTA)
 		{
 			gettime(&clk, ctime_buf);
 			fprintf(tunLogPtr, "%s %s: ***flow_hop_latency_threshold = %lld\n", ctime_buf, phase2str(current_phase), flow_hop_latency_threshold);
@@ -847,76 +847,162 @@ void check_req(http_s *h, char aResp[])
 		fprintf(tunLogPtr,"%s %s: ***Applying recommended Tuning now***\n", ctime_buf, phase2str(current_phase));
 		sprintf(aHttpRequest,"sh ./user_menu.sh");
 		system(aHttpRequest);
+		goto after_check;
 	}
-	else
-		if (strstr(pReqData,"GET /-b#rx#"))
+
+	if (strstr(pReqData,"GET /-d#"))
+	{
+		int vNewDebugLevel = 0;
+		/* Change debug level of Tuning Module */
+		char *p = (pReqData + sizeof("GET /-d#")) - 1;
+		if (isdigit(*p))
 		{
-			/* Change rx ring buffer size */
-			char *p = (pReqData + sizeof("GET /-b#rx#")) - 1;
-			while (isdigit(*p))
-			{
-				aNumber[count++] = *p;
-				p++;
-			}
-
-
-			sprintf(aResp,"Changed rx ring buffer size of %s to %s!\n", netDevice, aNumber);
-			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change RX ring buffer size of %s to %s***\n", ctime_buf, phase2str(current_phase), netDevice, aNumber);
-			fprintf(tunLogPtr,"%s %s: ***Changing RX buffer size now***\n", ctime_buf, phase2str(current_phase));
-			sprintf(aNicSettingFromHttp,"ethtool -G %s rx %s", netDevice, aNumber);
-			
-			fprintf(tunLogPtr,"%s %s: ***Doing *%s***\n", ctime_buf, phase2str(current_phase), aNicSettingFromHttp);
-			system(aNicSettingFromHttp);
+			aNumber[count] = *p;
 		}
-		else
-			if (strstr(pReqData,"GET /-b#tx#"))
-			{
-				/* Change tx ring buffer size */
-				char *p = (pReqData + sizeof("GET /-b#tx#")) - 1;
-				while (isdigit(*p))
-				{
-					aNumber[count++] = *p;
-					p++;
-				}
-
-				sprintf(aResp,"Changed tx ring buffer size of %s to %s!\n", netDevice, aNumber);
-		
-				gettime(&clk, ctime_buf);
-				fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change TX ring buffer size of %s to %s***\n", ctime_buf, phase2str(current_phase), netDevice, aNumber);
-				fprintf(tunLogPtr,"%s %s: ***Changing TX buffer size now***\n", ctime_buf, phase2str(current_phase));
-				sprintf(aNicSettingFromHttp,"ethtool -G %s tx %s", netDevice, aNumber);
-			
-				fprintf(tunLogPtr,"%s %s: ***Doing *%s***\n", ctime_buf, phase2str(current_phase), aNicSettingFromHttp);
-				system(aNicSettingFromHttp);
-			}
-			else
-				if (strstr(pReqData,"GET /-d#"))
-				{
-					int vNewDebugLevel = 0;
-					/* Change debug level of Tuning Module */
-					char *p = (pReqData + sizeof("GET /-d#")) - 1;
-					if (isdigit(*p))
-					{
-						aNumber[count] = *p;
-					}
 	
-					vNewDebugLevel = atoi(aNumber);
-					sprintf(aResp,"Changed debug level of Tuning Module from %d to %d!\n", vDebugLevel, vNewDebugLevel);
+		vNewDebugLevel = atoi(aNumber);
+		sprintf(aResp,"Changed debug level of Tuning Module from %d to %d!\n", vDebugLevel, vNewDebugLevel);
 		
-					gettime(&clk, ctime_buf);
-					fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change debug level of Tuning Module from %d to %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel, vNewDebugLevel);
-					vDebugLevel = vNewDebugLevel;
-					fprintf(tunLogPtr,"%s %s: ***New debug level is %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel);
-				}
-				else
-					{
-						strcpy(aResp,"Received something else!!!\n");
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change debug level of Tuning Module from %d to %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel, vNewDebugLevel);
+		vDebugLevel = vNewDebugLevel;
+		fprintf(tunLogPtr,"%s %s: ***New debug level is %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel);
+		goto after_check;
+	}
+
+	if (strstr(pReqData,"GET /-ct#flow_sink#"))
+	{
+		/* Change the value of the flow sink time delta */
+		__u32 vNewFlowSinkTimeDelta = 0;
+		char *p = (pReqData + sizeof("GET /-ct#flow_sink#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+
+		vNewFlowSinkTimeDelta = strtoul(aNumber, (char **)0, 10);
+		sprintf(aResp,"Changed flow sink time delta from %u to %u!\n", vFLOW_SINK_TIME_DELTA, vNewFlowSinkTimeDelta);
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change flow sink time delta from %u to %u***\n", ctime_buf, phase2str(current_phase), vFLOW_SINK_TIME_DELTA, vNewFlowSinkTimeDelta);
+		vFLOW_SINK_TIME_DELTA = vNewFlowSinkTimeDelta;
+		fprintf(tunLogPtr,"%s %s: ***New flow sink time delta value is *%u***\n", ctime_buf, phase2str(current_phase), vFLOW_SINK_TIME_DELTA);
+		goto after_check;
+	}
+			
+	if (strstr(pReqData,"GET /-ct#q_occ#"))
+	{
+		/* Change the value of the queue occupancy delta */
+		__u32 vNewQueueOccupancyDelta = 0;
+		char *p = (pReqData + sizeof("GET /-ct#q_occ#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+
+		vNewQueueOccupancyDelta = strtoul(aNumber, (char **)0, 10);
+		sprintf(aResp,"Changed queue occupancy delta from %u to %u!\n", vQUEUE_OCCUPANCY_DELTA, vNewQueueOccupancyDelta);
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change queue occupancy delta from %u to %u***\n", ctime_buf, phase2str(current_phase), vQUEUE_OCCUPANCY_DELTA, vNewQueueOccupancyDelta);
+		vQUEUE_OCCUPANCY_DELTA = vNewQueueOccupancyDelta;
+		fprintf(tunLogPtr,"%s %s: ***New queue occupancy delta value is *%u***\n", ctime_buf, phase2str(current_phase), vQUEUE_OCCUPANCY_DELTA);
+		goto after_check;
+	}
+			
+	if (strstr(pReqData,"GET /-ct#hop_late#"))
+	{
+		/* Change the value of the hop latency delta */
+		__u32 vNewHopLatencyDelta = 0;
+		char *p = (pReqData + sizeof("GET /-ct#hop_late#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+
+		vNewHopLatencyDelta = strtoul(aNumber, (char **)0, 10);
+		sprintf(aResp,"Changed hop latency delta from %u to %u!\n", vHOP_LATENCY_DELTA, vNewHopLatencyDelta);
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change hop latency delta from %u to %u***\n", ctime_buf, phase2str(current_phase), vHOP_LATENCY_DELTA, vNewHopLatencyDelta);
+		vHOP_LATENCY_DELTA = vNewHopLatencyDelta;
+		fprintf(tunLogPtr,"%s %s: ***New hop latency delta value is *%u***\n", ctime_buf, phase2str(current_phase), vHOP_LATENCY_DELTA);
+		goto after_check;
+	}
+			
+	if (strstr(pReqData,"GET /-ct#flow_late#"))
+	{
+		/* Change the value of the flow latency delta */
+		__u32 vNewFlowLatencyDelta = 0;
+		char *p = (pReqData + sizeof("GET /-ct#flow_late#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+
+		vNewFlowLatencyDelta = strtoul(aNumber, (char **)0, 10);
+		sprintf(aResp,"Changed flow latency delta from %u to %u!\n", vFLOW_LATENCY_DELTA, vNewFlowLatencyDelta);
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change flow latency delta from %u to %u***\n", ctime_buf, phase2str(current_phase), vFLOW_LATENCY_DELTA, vNewFlowLatencyDelta);
+		vFLOW_LATENCY_DELTA = vNewFlowLatencyDelta;
+		fprintf(tunLogPtr,"%s %s: ***New flow latency delta value is *%u***\n", ctime_buf, phase2str(current_phase), vFLOW_LATENCY_DELTA);
+		goto after_check;
+	}
+			
+	if (strstr(pReqData,"GET /-b#rx#"))
+	{
+		/* Change rx ring buffer size */
+		char *p = (pReqData + sizeof("GET /-b#rx#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+
+
+		sprintf(aResp,"Changed rx ring buffer size of %s to %s!\n", netDevice, aNumber);
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change RX ring buffer size of %s to %s***\n", ctime_buf, phase2str(current_phase), netDevice, aNumber);
+		fprintf(tunLogPtr,"%s %s: ***Changing RX buffer size now***\n", ctime_buf, phase2str(current_phase));
+		sprintf(aNicSettingFromHttp,"ethtool -G %s rx %s", netDevice, aNumber);
 		
-						gettime(&clk, ctime_buf);
-						fprintf(tunLogPtr,"%s %s: ***Received some kind of request from Http Client***\n", ctime_buf, phase2str(current_phase));
-						fprintf(tunLogPtr,"%s %s: ***Applying some kind of request***\n", ctime_buf, phase2str(current_phase));
-					}
+		fprintf(tunLogPtr,"%s %s: ***Doing *%s***\n", ctime_buf, phase2str(current_phase), aNicSettingFromHttp);
+		system(aNicSettingFromHttp);
+		goto after_check;
+	}
+			
+	if (strstr(pReqData,"GET /-b#tx#"))
+	{
+		/* Change tx ring buffer size */
+		char *p = (pReqData + sizeof("GET /-b#tx#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+
+		sprintf(aResp,"Changed tx ring buffer size of %s to %s!\n", netDevice, aNumber);
+		
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change TX ring buffer size of %s to %s***\n", ctime_buf, phase2str(current_phase), netDevice, aNumber);
+		fprintf(tunLogPtr,"%s %s: ***Changing TX buffer size now***\n", ctime_buf, phase2str(current_phase));
+		sprintf(aNicSettingFromHttp,"ethtool -G %s tx %s", netDevice, aNumber);
+		
+		fprintf(tunLogPtr,"%s %s: ***Doing *%s***\n", ctime_buf, phase2str(current_phase), aNicSettingFromHttp);
+		system(aNicSettingFromHttp);
+		goto after_check;
+	}
+
+	{
+		strcpy(aResp,"Received something else!!!\n");
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received some kind of request from Http Client***\n", ctime_buf, phase2str(current_phase));
+		fprintf(tunLogPtr,"%s %s: ***Applying some kind of request***\n", ctime_buf, phase2str(current_phase));
+		/* fall thru */
+	}
+
+after_check:
 
 	fflush(tunLogPtr);
 return;
