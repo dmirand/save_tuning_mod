@@ -7,6 +7,8 @@ static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nUse \"tuncli -t\" to apply tunings that were recommended. \
 		       \nUse \"tuncli -b rx [value]\" to change RX ring buffer size of the NIC. \
 		       \nUse \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC. \
+		       \nUse \"tuncli -b sock_rx_buff [value]\" to change the maximum OS receive buffer size for all types of connections. \
+		       \nUse \"tuncli -b sock_tx_buff [value]\" to change the maximum OS send buffer size for all types of connections. \
 		       \nUse \"tuncli -d [value]\" to change the debug value of the Tuning Module. Values range from 0 to 4. \
 		       \nUse \"tuncli -ct hop_late [value]\" to change the value of the hop latency delta. \
 		       \nUse \"tuncli -ct flow_late [value]\" to change the value of the flow latency delta. \
