@@ -1,9 +1,0 @@
-#!/usr/bin/bash
-x=1
-while [ $x = "1" ]
-do
-ping fc00:dead:cafe:1::1 -c 1
-sleep 7
-echo "hello there"
-done
-
