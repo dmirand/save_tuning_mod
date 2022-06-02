@@ -149,9 +149,9 @@ static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 #define QUEUE_OCCUPANCY_DELTA 80
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
-static __u32 vHOP_LATENCY_DELTA = 100000;
+static __u32 vHOP_LATENCY_DELTA = 120000;
 static __u32 vFLOW_LATENCY_DELTA = 280000;
-static __u32 vQUEUE_OCCUPANCY_DELTA = 6000; //can try 5700 //25000 ok when no MSS set - we currently set MSS to 7500
+static __u32 vQUEUE_OCCUPANCY_DELTA = 6400; //can try 6000 //25000 ok when no MSS set - we currently set MSS to 7500
 static __u32 vFLOW_SINK_TIME_DELTA = 4000000000;
 #endif
 #define INT_DSCP (0x17)
