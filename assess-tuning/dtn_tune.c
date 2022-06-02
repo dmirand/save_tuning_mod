@@ -33,7 +33,7 @@ void fDoSystemtuning(void);
 void fDo_lshw(void);
 int fCheckForNicsAndSpeeds();
 
-static int gInterval = 2; //default
+static int gInterval = 2000; //default
 static int netDeviceSpeed = 0;
 static int numaNode = 0;
 static int netDevice_rx_ring_buff_cfg_max_val = 0;
@@ -357,7 +357,7 @@ typedef struct {
 	char cfg_value[32];
 } sUserValues_t[NUMUSERVALUES];
 
-sUserValues_t userValues = {{"evaluation_timer", "2", "-1"},
+sUserValues_t userValues = {{"evaluation_timer", "2000", "-1"},
 			{"learning_mode_only","y","-1"},
 			{"API_listen_port","5523","-1"},
 			{"apply_default_system_tuning","n","-1"},
