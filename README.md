@@ -66,9 +66,7 @@ There are a few relevant directories here:
 
 ```testing```
 -	Contains source for a loader and bpf kernel file that can be used for testing the Tuning Module
-
-```modules```
--	Contains source for a LKM (Loadable Kernel Module) that can be used for testing the Tuning Module
+-	Also contains source for a LKM (Loadable Kernel Module) that could be integrated with the Tuning Module if ever needed.
 
 ```cli```
 -	Contains source for a HTTP client that is used as a CLI for sending instructions to
@@ -85,11 +83,6 @@ In order to compile and work with the Tuning Module, do the following:
 		*	```git submodule init```
 		*	```git submodule update```
 
--	Run ```make``` in ```modules/tuningMod/```. To  insert the module into the kernel:
-	* Run ```sudo insmod tuningModule.ko```
-	* Find the line ```tuningModule has been loaded``` in /var/log/kern.log (Ubuntu) and there will 
-	  be a number next to it.  This is the MAJOR number. ```e.g. tuningModule has been loaded 508```
-		* Run ```sudo mknod /dev/tuningMod c MAJOR_NUMBER 0``` to create device for LKM
 -	Run ```make``` in ```testing/``` and use loader to load the bpf file into the kernel
 -	Run ```make``` in ```userspace/``` and start the Tuning Module eg. ```sudo ./user_dtn -d enp6s0```
 	* 	```/tmp/tuningLog``` will contain all the relevant output 
