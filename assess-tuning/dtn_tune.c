@@ -2083,11 +2083,15 @@ void fDoMTU()
 											cfg_val2 = atoi(aMaxMtuVal);
 											if  (rec_mtu > cfg_val2)
 											{
-												printf("rec_mtu is %d, cfg_val2 is %d\n", rec_mtu, cfg_val2);
 												fprintf(tunLogPtr,"%26d %20s\n", rec_mtu, "na - rec > max");
 												break;
 											}
 										}
+										else
+											{
+												fprintf(tunLogPtr,"%26d %20s\n", rec_mtu, "na - maxmtu nf");
+												break;
+											}
 									}
 
 							}
