@@ -845,7 +845,7 @@ void check_req(http_s *h, char aResp[])
 		gettime(&clk, ctime_buf);
 		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to apply recommended Tuning***\n", ctime_buf, phase2str(current_phase));
 		fprintf(tunLogPtr,"%s %s: ***Applying recommended Tuning now***\n", ctime_buf, phase2str(current_phase));
-		sprintf(aHttpRequest,"sh ./user_menu.sh");
+		sprintf(aHttpRequest,"sh ./user_menu.sh apply_all_recommended_settings");
 		system(aHttpRequest);
 		goto after_check;
 	}
@@ -1327,6 +1327,8 @@ int main(int argc, char **argv)
 	sArgv.argv = argv;
 	
 	catch_sigint();
+
+	system("sh ./user_menu.sh"); //make backup of tuningLog first if already exist
 	tunLogPtr = fopen("/tmp/tuningLog","w");
 	if (!tunLogPtr)
 	{
@@ -1347,6 +1349,7 @@ int main(int argc, char **argv)
 		}
 		
 	user_assess(argc, argv);
+	fCheck_log_limit();
 	
 	gettime(&clk, ctime_buf);
 	current_phase = LEARNING;

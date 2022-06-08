@@ -129,8 +129,6 @@ apply_all_recommended_settings()
 run_dtntune()
 {
 logcount=
-	clear_screen
-	printf '\n###%s\n\n' "Running Tuning Assessment..."
 	if [ -f /tmp/tuningLog ]
 	then
 		logcount=`cat /tmp/tuningLog.count`
@@ -144,4 +142,4 @@ logcount=
 
 # main execution thread
 run_dtntune
-apply_all_recommended_settings
+$1

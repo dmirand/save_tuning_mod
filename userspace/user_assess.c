@@ -37,6 +37,7 @@ char gApplyBiosTuning = 'n';
 char gApplyNicTuning = 'n';
 char gApplyDefSysTuning = 'n';
 char gMakeTuningPermanent = 'n';
+int gMaxnum_tuning_logs = 10; //default
 //char vHaveNetDevice = 0;
 
 enum workflow_phases current_phase = STARTING;
@@ -56,7 +57,7 @@ const char *phase2str(enum workflow_phases phase)
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	7
+#define NUMUSERVALUES	8
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -70,8 +71,62 @@ sUserValues_t userValues = {{"evaluation_timer", "2000", "-1"},
 			{"apply_default_system_tuning","n","-1"},
 			{"apply_bios_tuning","n","-1"},
 			{"apply_nic_tuning","n","-1"},
-			{"make_default_system_tuning_perm","n","-1"}
+			{"make_default_system_tuning_perm","n","-1"},
+			{"maxnum_tuning_logs","10","-1"}
 			};
+
+void fCheck_log_limit(void)
+{
+	FILE * logCountPtr = 0;	
+	char * fTuningLogCountFile = "/tmp/tuningLog.count";
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char *p = 0;
+	char setting[256];
+	int count = 0;
+	time_t clk;
+	char ctime_buf[27];
+    
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"\n%s %s: Checking number of log file backups already made...\n",ctime_buf, phase2str(current_phase));
+	logCountPtr = fopen(fTuningLogCountFile,"r");
+	if (!logCountPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"\n%s %s: Opening of %s failed, errno = %d\n",ctime_buf, phase2str(current_phase), fTuningLogCountFile, save_errno);
+		return;
+	}
+
+	if ((nread = getline(&line, &len, logCountPtr)) != -1) 
+	{
+		int ind = 0;
+		int cfg_val = 0;
+		memset(setting,0,sizeof(setting));
+		p = line;
+		while (isdigit((int)p[ind])) {
+			setting[ind] = p[ind];
+			ind++;
+		}
+
+		cfg_val = atoi(setting);
+		if (cfg_val >= gMaxnum_tuning_logs)
+		{
+			fclose(logCountPtr);
+			logCountPtr = 0;
+			sprintf(setting,"echo 0 > %s",fTuningLogCountFile);
+			system(setting);
+	
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"%s %s ***Log files limit of %d reached. Will start over backups of tuningLog next time***\n", ctime_buf, phase2str(current_phase), gMaxnum_tuning_logs);
+		}
+	}
+
+	free(line); //must free
+
+return;
+}
 
 void fDoGetUserCfgValues(void)
 {
@@ -190,6 +245,15 @@ void fDoGetUserCfgValues(void)
 									else
 										gAPI_listen_port = cfg_val;
 								}
+								else
+									if (strcmp(userValues[count].aUserValues,"maxnum_tuning_logs") == 0)
+									{
+										int cfg_val = atoi(userValues[count].cfg_value);
+										if (cfg_val == -1) //no value in txt file
+											gMaxnum_tuning_logs = atoi(userValues[count].default_val);
+										else
+											gMaxnum_tuning_logs = atoi(userValues[count].cfg_value);
+									}
 	}
 
 	gettime(&clk, ctime_buf);

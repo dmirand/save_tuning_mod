@@ -11,12 +11,13 @@ Additional Notes:
 There are 3 files that are used in conjunction with the Tuning Module: 
 i.   user_config.txt 
 ii.  gdv.sh 
-iii. /tmp/tuningLog 
+iii. gdv_100.sh
+iv. /tmp/tuningLog 
 
 user_config.txt 
 ===============
 In the user_config.txt, the operator can use certain well known values to 
-control how the Tuning Module operates.  So far, there are four parameters 
+control how the Tuning Module operates.  So far, there are 8 parameters 
 that can be used.  The following is an explanation for each one: 
 
 a. evaluation timer  
@@ -51,6 +52,14 @@ The apply_nic_tuning parameter is use to tell the Tuning Module if after
 evaluating the NIC configuration, it should apply the recommendations
 itself or not. The default is "n" which means it should make the 
 recommendations to the DTN operator, but not apply them itself.
+
+g. maxnum_tuning_logs
+The maxnum_tuning_logs parameter is used to limit the amount of backups
+of tuningLogs that the Tuning Module should make. the default is 10.
+
+gdv_100.sh
+==========
+Same as gdv.sh below, but used for NICs with speeds >= 100G
 
 
 gdv.sh 
