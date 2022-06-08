@@ -25,3 +25,4 @@ extern void fDoBiosTuning(void);
 extern void fDoNicTuning(void);
 extern void fDoSystemtuning(void);
 extern void fDo_lshw(void);
+extern void fCheck_log_limit(void);
