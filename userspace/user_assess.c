@@ -122,6 +122,9 @@ void fCheck_log_limit(void)
 			fprintf(tunLogPtr,"%s %s ***Log files limit of %d reached. Will start over backups of tuningLog next time***\n", ctime_buf, phase2str(current_phase), gMaxnum_tuning_logs);
 		}
 	}
+	
+	if (logCountPtr)
+		fclose(logCountPtr);
 
 	free(line); //must free
 
