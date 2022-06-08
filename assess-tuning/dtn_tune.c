@@ -1982,6 +1982,8 @@ void fDoMTU()
 	time_t clk;
 	char *line = NULL;
 	size_t len = 0;
+	char *line2 = NULL;
+	size_t len2 = 0;
 	ssize_t nread;
 	char aNicSetting[512];
 	FILE *nicCfgFPtr = 0;
@@ -2001,7 +2003,7 @@ void fDoMTU()
 			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
 			{ //mtu
 				char sValue[256];
-				int cfg_val = 0;
+				int cfg_val = 0, cfg_val2 = 0;
 				strcpy(sValue,line);
 				if (sValue[strlen(sValue)-1] == '\n')
 					sValue[strlen(sValue)-1] = 0;
@@ -2021,6 +2023,82 @@ void fDoMTU()
 
 						if (rec_mtu > cfg_val)
 						{
+/*******/
+							/* lets check to see if this is bigger than maxmtu, otherwise if can't figure out,
+							 * leave alone for now
+							 */
+							struct stat sb;
+							FILE *nicCfgFPtr2 = 0;
+							char aMaxMtuVal[256];
+							sprintf(aNicSetting,"ip -d link list %s > /tmp/NIC.cfgfile2 2>/dev/null", netDevice);
+							system(aNicSetting);
+
+							stat("/tmp/NIC.cfgfile2", &sb);
+							if (sb.st_size != 0) 
+							{
+								nicCfgFPtr2 = fopen("/tmp/NIC.cfgfile2","r");
+								if (!nicCfgFPtr2)
+								{
+									int save_errno = errno;
+									gettime(&clk, ctime_buf);
+									fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile2 to retrieve maxmtu value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+								}
+								else
+									{
+										int found = 0;
+										while((nread = getline(&line2, &len2, nicCfgFPtr2)) != -1)
+										{ //looking for maxmtu string
+											char sValue[512];
+											char *y = 0;
+											strcpy(sValue,line2);
+											if (sValue[strlen(sValue)-1] == '\n')
+												sValue[strlen(sValue)-1] = 0;
+
+											y = strstr(sValue,"maxmtu");
+											if (y)
+											{
+												int count = 0;
+												y = y + strlen("maxmtu");
+												while isblank((int)*y) y++;
+												memset(aMaxMtuVal,0,sizeof(aMaxMtuVal));
+												while isdigit((int)*y)
+												{
+													aMaxMtuVal[count] = *y;
+													y++;
+                    											count++;
+                                        							
+													found = 1;
+                                        							}
+
+                                        							break;
+                                							}
+                        							}
+
+										free(line2);
+										fclose(nicCfgFPtr2);
+										system("rm -f /tmp/NIC.cfgfile2"); //remove file after use
+                        							
+										if (found)
+										{
+											cfg_val2 = atoi(aMaxMtuVal);
+											if  (rec_mtu > cfg_val2)
+											{
+												printf("rec_mtu is %d, cfg_val2 is %d\n", rec_mtu, cfg_val2);
+												fprintf(tunLogPtr,"%26d %20s\n", rec_mtu, "na - rec > max");
+												break;
+											}
+										}
+									}
+
+							}
+							else
+								{ //nothing in file
+									system("rm -f /tmp/NIC.cfgfile2"); 
+									fprintf(tunLogPtr,"%26d %20s\n", cfg_val, "na - comm invalid");
+									break;
+								}
+/*******/
+
 							fprintf(tunLogPtr,"%26d %20c\n", rec_mtu, gApplyNicTuning);
 							if (gApplyNicTuning == 'y')
 							{
