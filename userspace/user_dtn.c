@@ -337,7 +337,6 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	void *data_end = data + size;
 	__u32 data_offset = 0;
 	struct hop_key hop_key;
-	double vCurrent_Rtt = 0.0;
 	long long flow_hop_latency_threshold = 0;
 	time_t clk;
 	char ctime_buf[27];
@@ -444,7 +443,6 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		
 		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		flow_hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
-		vCurrent_Rtt += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		print_hop_key(&hop_key);
 		hop_key.hop_index++;
 
@@ -454,10 +452,9 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	bpf_map_update_elem(ctx->flow_thresholds, &hop_key.flow_key, &flow_threshold_update, BPF_ANY);
 	struct counter_set empty_counter = {};
 	bpf_map_update_elem(ctx->flow_counters, &(hop_key.flow_key), &empty_counter, BPF_NOEXIST);
-	vCurrent_Rtt = vCurrent_Rtt * 2; //double up for now to simulate 2 way value - should be in nanosecs
 
 	if (vDebugLevel > 2)
-		fprintf(stdout, "PSUEDO_CURRENT_RTT = %f, flow_hop_latency_threshold = %lld\n",vCurrent_Rtt/1000000.0, flow_hop_latency_threshold);
+		fprintf(stdout, "flow_hop_latency_threshold = %lld\n", flow_hop_latency_threshold);
 	
 	if (vDebugLevel > 1)
 	{
@@ -1246,6 +1243,72 @@ start:
 return ((char *) 0);
 }
 
+void * fDoRunFindHighestRtt(void * vargp)
+{
+	//int * fd = (int *) vargp;
+	time_t clk;
+	char ctime_buf[27];
+	char buffer[128];
+	FILE *pipe;
+	char try[1024];
+	unsigned long rtt = 0, highest_rtt = 0;
+
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Starting Finding Highest RTT thread ...***\n", ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+
+	sprintf(try,"sudo bpftrace -e \'BEGIN { @ca_rtt_us;} kprobe:tcp_ack_update_rtt { @ca_rtt_us = arg4; } kretprobe:tcp_ack_update_rtt /pid != 0/ { printf(\"%s\\n\", @ca_rtt_us); } interval:s:5 {  exit(); } END { clear(@ca_rtt_us); }\'", "%lu");
+
+rttstart:
+		highest_rtt = 0;
+		pipe = popen(try,"r");
+		if (!pipe)
+		{
+			printf("popen failed!\n");
+			return (char *) -1;
+		}
+
+		//get the first line and forget about it
+		if (fgets(buffer, 128, pipe) != NULL);
+		else
+		{
+			printf(" Not finished****\n");
+			pclose(pipe);
+			return (char *) -2;
+		}
+
+		// read until process exits after "interval" seconds above
+		while (!feof(pipe))
+		{
+			// use buffer to read and add to result
+			if (fgets(buffer, 128, pipe) != NULL);
+			else
+			{
+				goto finish_up;
+				return (char *)-2;
+			}
+			sscanf(buffer,"%lu", &rtt);
+			if (rtt > highest_rtt)
+				highest_rtt = rtt;
+
+			if (vDebugLevel > 3)
+				printf("**rtt = %luus, highest rtt = %luus\n",rtt, highest_rtt);
+		}
+finish_up:
+		pclose(pipe);
+
+		if (highest_rtt)
+		{
+			if (vDebugLevel > 2)
+				printf("***highest rtt is %.3fms\n", highest_rtt/(double)1000);
+		}
+
+		sleep(3); //check again in 5 secs
+		goto rttstart;
+
+return ((char *) 0);
+}
+
 void * fDoRunHelperDtn(void * vargp)
 {
 	time_t clk;
@@ -1312,7 +1375,9 @@ int main(int argc, char **argv)
 	int vRetFromRunHttpServerThread, vRetFromRunHttpServerJoin;
 	int vRetFromRunGetThresholdsThread, vRetFromRunGetThresholdsJoin;
 	int vRetFromRunHelperDtnThread, vRetFromRunHelperDtnJoin;
+	int vRetFromRunFindHighestRttThread, vRetFromRunFindHighestRttJoin;
 	pthread_t doRunBpfCollectionThread_id, doRunHttpServerThread_id, doRunGetThresholds_id, doRunHelperDtn_id;
+	pthread_t doRunFindHighestRttThread_id;
 	sArgv_t sArgv;
 	time_t clk;
 	char ctime_buf[27];
@@ -1389,6 +1454,8 @@ int main(int argc, char **argv)
 	vRetFromRunGetThresholdsThread = pthread_create(&doRunGetThresholds_id, NULL, fDoRunGetThresholds, &sArgv); 
 	//Start Helper functioning	
 	vRetFromRunHelperDtnThread = pthread_create(&doRunHelperDtn_id, NULL, fDoRunHelperDtn, &sArgv); 
+	//Start Rtt monitoring
+	vRetFromRunFindHighestRttThread = pthread_create(&doRunFindHighestRttThread_id, NULL, fDoRunFindHighestRtt, &sArgv); 
 
 #if defined(RUN_KERNEL_MODULE)
 	if (vRetFromKernelThread == 0)
@@ -1405,6 +1472,9 @@ int main(int argc, char **argv)
 
 	if (vRetFromRunHelperDtnThread == 0)
     		vRetFromRunHelperDtnJoin = pthread_join(doRunHelperDtn_id, NULL);
+
+	if (vRetFromRunFindHighestRttThread == 0)
+    		vRetFromRunFindHighestRttJoin = pthread_join(doRunFindHighestRttThread_id, NULL);
 
 #if defined(RUN_KERNEL_MODULE)
 	if (fd > 0)
