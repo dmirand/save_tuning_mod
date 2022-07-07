@@ -22,7 +22,7 @@ The file you are currently reading.
 user_config.txt 
 ===============
 In the user_config.txt, the operator can use certain well known values to 
-control how the Tuning Module operates.  So far, there are 8 parameters 
+control how the Tuning Module operates.  So far, there are 9 parameters 
 that can be used.  The following is an explanation for each one: 
 
 a. evaluation timer  
