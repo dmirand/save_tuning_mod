@@ -21,8 +21,22 @@
 #include <linux/bpf.h>
 #include <arpa/inet.h>
 
-
+#include "unp.h"
 #include "user_dtn.h"
+
+pthread_mutex_t dtn_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t dtn_cond = PTHREAD_COND_INITIALIZER;
+static int cdone = 0;
+static unsigned int sleep_count = 5;
+struct args test;
+char aSrc_Ip[32];
+union uIP {
+	 __u32 y;
+       	 unsigned char  a[4];
+};
+
+static union uIP src_ip_addr;
+
 FILE * tunLogPtr = 0;
 void gettime(time_t *clk, char *ctime_buf)
 {
@@ -110,8 +124,8 @@ typedef struct {
 } sArgv_t;
 
 #ifdef USING_PERF_EVENT_ARRAY2
-#include "../../int-sink/src/shared/int_defs.h"
-#include "../../int-sink/src/shared/filter_defs.h"
+#include "../../c++-int-sink/int-sink/src/shared/int_defs.h"
+#include "../../c++-int-sink/int-sink/src/shared/filter_defs.h"
 
 enum ARGS{
 	CMD_ARG,
@@ -149,9 +163,9 @@ static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 #define QUEUE_OCCUPANCY_DELTA 80
 #define FLOW_SINK_TIME_DELTA 1000000000
 #else
-static __u32 vHOP_LATENCY_DELTA = 120000;
-static __u32 vFLOW_LATENCY_DELTA = 280000;
-static __u32 vQUEUE_OCCUPANCY_DELTA = 6400; //can try 6000 //25000 ok when no MSS set - we currently set MSS to 7500
+static __u32 vHOP_LATENCY_DELTA = 500000; //was  120000
+static __u32 vFLOW_LATENCY_DELTA = 500000; //was 280000
+static __u32 vQUEUE_OCCUPANCY_DELTA = 30000; //was 6400
 static __u32 vFLOW_SINK_TIME_DELTA = 4000000000;
 #endif
 #define INT_DSCP (0x17)
@@ -379,6 +393,8 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			fprintf(stdout, "ingress_time = %u\n",ingress_time);
 			fprintf(stdout, "egress_time = %u\n",egress_time);
 			fprintf(stdout, "hop_hop_latency_threshold = %u\n",hop_hop_latency_threshold);
+			fprintf(stdout, "sizeof struct int_hop-metadata = %lu\n",sizeof(struct int_hop_metadata));
+			fprintf(stdout, "sizeof struct hop_key = %lu\n",sizeof(struct hop_key));
 		}
 #if 1
 		if ((hop_hop_latency_threshold > vHOP_LATENCY_DELTA) && (Qinfo > vQUEUE_OCCUPANCY_DELTA))
@@ -444,6 +460,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		flow_hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		print_hop_key(&hop_key);
+		src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
 		hop_key.hop_index++;
 
 	}
@@ -485,21 +502,26 @@ void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
 	fprintf(tunLogPtr, "%s %s: Missed %llu sets of packet metadata.\n", ctime_buf, phase2str(current_phase), cnt);
 	fflush(tunLogPtr);
 }
-
+	
 void print_flow_key(struct flow_key *key)
 {
 	fprintf(stdout, "Flow Key:\n");
+#if 1
 	fprintf(stdout, "\tegress_switch:%X\n", key->switch_id);
 	fprintf(stdout, "\tegress_port:%hu\n", key->egress_port);
 	fprintf(stdout, "\tvlan_id:%hu\n", key->vlan_id);
+
+	if (src_ip_addr.y)
+		fprintf(stdout,"%u.%u.%u.%u", src_ip_addr.a[0], src_ip_addr.a[1], src_ip_addr.a[2], src_ip_addr.a[3]);
+#endif
 }
 
 void print_hop_key(struct hop_key *key)
 {
-	if (vDebugLevel > 2)
+	if (vDebugLevel > 3 )
 	{
-		//fprintf(stdout, "Hop Key:\n");
-		//print_flow_key(&(key->flow_key));
+		fprintf(stdout, "Hop Key:\n");
+		print_flow_key(&(key->flow_key));
 		fprintf(stdout, "\thop_index: %X\n", key->hop_index);
 	}
 }
@@ -863,6 +885,15 @@ void check_req(http_s *h, char aResp[])
 		gettime(&clk, ctime_buf);
 		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change debug level of Tuning Module from %d to %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel, vNewDebugLevel);
 		vDebugLevel = vNewDebugLevel;
+		if (vDebugLevel > 1 && src_ip_addr.y)
+		{
+			Pthread_mutex_lock(&dtn_mutex);
+        		strcpy(test.msg, "Hello there!!!\n");
+        		test.len = htonl(sleep_count);
+        		cdone = 1;
+        		Pthread_cond_signal(&dtn_cond);
+        		Pthread_mutex_unlock(&dtn_mutex);
+		}
 		fprintf(tunLogPtr,"%s %s: ***New debug level is %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel);
 		goto after_check;
 	}
@@ -1111,7 +1142,7 @@ void * fDoRunGetThresholds(void * vargp)
 	//int * fd = (int *) vargp;
 	time_t clk;
 	char ctime_buf[27];
-
+	
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Check Threshold thread ...***\n", ctime_buf, phase2str(current_phase));
 	fflush(tunLogPtr);
@@ -1129,6 +1160,7 @@ void * fDoRunGetThresholds(void * vargp)
 	rx_missed_errs_before = rx_missed_errs_now = rx_missed_errs_tot = 0;
 	rx_before =  rx_now = rx_bytes_tot = rx_bits_per_sec = 0;
 	tx_before =  tx_now =  tx_bytes_tot = tx_bits_per_sec = 0;
+
 	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; $rx_missed_errors = $rtnl->rx_missed_errors; printf(\"%s %s %s\\n\", $tx_bytes, $rx_bytes, $rx_missed_errors); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%lu","%S");
 	/* fix for kfunc below too */
 	/*sprintf(try,"bpftrace -e \'BEGIN { @name;} kfunc:dev_get_stats { $nd = (struct net_device *) args->dev; @name = $nd->name; } kretfunc:dev_get_stats /@name == \"%s\"/ { $nd = (struct net_device *) args->dev; $rtnl = (struct rtnl_link_stats64 *) args->storage; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%S");*/
@@ -1256,7 +1288,7 @@ void * fDoRunFindHighestRtt(void * vargp)
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Finding Highest RTT thread ...***\n", ctime_buf, phase2str(current_phase));
 	fflush(tunLogPtr);
-
+        
 	sprintf(try,"sudo bpftrace -e \'BEGIN { @ca_rtt_us;} kprobe:tcp_ack_update_rtt { @ca_rtt_us = arg4; } kretprobe:tcp_ack_update_rtt /pid != 0/ { printf(\"%s\\n\", @ca_rtt_us); } interval:s:5 {  exit(); } END { clear(@ca_rtt_us); }\'", "%lu");
 
 rttstart:
@@ -1303,7 +1335,7 @@ finish_up:
 				printf("***highest rtt is %.3fms\n", highest_rtt/(double)1000);
 		}
 
-		sleep(3); //check again in 5 secs
+		sleep(3); //check again in 3 secs
 		goto rttstart;
 
 return ((char *) 0);
@@ -1369,6 +1401,237 @@ restart_vfork:
 return ((char *) 0);
 }
 
+void sig_chld_handler(int signum)
+{
+        pid_t pid;
+        int stat;
+
+        while ( (pid = waitpid(-1, &stat, WNOHANG)) > 0)
+                printf("Child %d terminated\n", pid);
+
+        return;
+}
+
+void catch_sigchld()
+{
+        static struct sigaction act;
+
+        memset(&act, 0, sizeof(act));
+
+        act.sa_handler = sig_chld_handler;
+        sigemptyset(&act.sa_mask); //no additional signals will be blocked
+        act.sa_flags = 0;
+
+        sigaction(SIGCHLD, &act, NULL);
+}
+
+void ignore_sigchld()
+{
+	int sigret;
+	static struct sigaction act;
+        memset(&act, 0, sizeof(act));
+
+        act.sa_handler = SIG_IGN;;
+        sigemptyset(&act.sa_mask); //no additional signals will be blocked
+        act.sa_flags = 0;
+
+        sigret = sigaction(SIGCHLD, &act, NULL);
+	if (sigret == 0)
+		printf("SIGCHLD ignored***\n");
+	else
+		printf("SIGCHLD not ignored***\n");
+	
+	return;
+}
+
+
+ssize_t                                         /* Read "n" bytes from a descriptor. */
+readn(int fd, void *vptr, size_t n)
+{
+        size_t  nleft;
+        ssize_t nread;
+        char    *ptr;
+
+        ptr = vptr;
+        nleft = n;
+        while (nleft > 0) {
+                if ( (nread = read(fd, ptr, nleft)) < 0) {
+                        if (errno == EINTR)
+                                nread = 0;              /* and call read() again */
+                        else
+                                return(-1);
+                } else if (nread == 0)
+                        break;                          /* EOF */
+
+                nleft -= nread;
+                ptr   += nread;
+        }
+        return(n - nleft);              /* return >= 0 */
+}
+/* end readn */
+
+ssize_t
+Readn(int fd, void *ptr, size_t nbytes)
+{
+        ssize_t         n;
+
+        if ( (n = readn(fd, ptr, nbytes)) < 0)
+                err_sys("readn error");
+        return(n);
+}
+
+void
+process_request(int sockfd)
+{
+	ssize_t                 n;
+	struct args             from_cli;
+	time_t clk;
+	char ctime_buf[27];
+
+	for ( ; ; ) 
+	{
+		if ( (n = Readn(sockfd, &from_cli, sizeof(from_cli))) == 0)
+			return;         /* connection closed by other end */
+
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received message %d from destination DTN...***\n", ctime_buf, phase2str(current_phase), ntohl(from_cli.len));
+		fflush(tunLogPtr);
+		printf("arg len = %d, arg buf = %s", ntohl(from_cli.len), from_cli.msg);
+	}
+}
+
+void * fDoRunGetMessageFromPeer(void * vargp)
+{
+	//int * fd = (int *) vargp;
+	time_t clk;
+	char ctime_buf[27];
+	int listenfd, connfd;
+	pid_t childpid;
+	socklen_t clilen;
+	struct sockaddr_in cliaddr, servaddr;
+#if 0
+        sigset_t set;
+        int sigret;
+#endif	
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Starting Listener for receiving messages destination DTN...***\n", ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+	
+	listenfd = Socket(AF_INET, SOCK_STREAM, 0);
+
+	bzero(&servaddr, sizeof(servaddr));
+	servaddr.sin_family      = AF_INET;
+	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	servaddr.sin_port        = htons(gSource_Dtn_Port);
+
+	Bind(listenfd, (SA *) &servaddr, sizeof(servaddr));
+	Listen(listenfd, LISTENQ);
+	
+	for ( ; ; ) 
+	{
+		clilen = sizeof(cliaddr);
+		if ( (connfd = accept(listenfd, (SA *) &cliaddr, &clilen)) < 0) 
+		{
+			if (errno == EINTR)
+				continue;  /* back to for() */
+			else
+				err_sys("accept error");
+		}
+        	
+		if ( (childpid = Fork()) == 0) 
+		{        /* child process */
+			Close(listenfd); /* close listening socket */
+			process_request(connfd);/* process the request */
+			exit(0);
+		}
+		
+		Close(connfd); /* parent closes connected socket */
+	}
+
+	return ((char *)0);
+}
+
+void read_sock(int sockfd)
+{
+	ssize_t                 n;
+	struct args             from_cli;
+
+	for ( ; ; ) 
+	{
+		if ( (n = Readn(sockfd, &from_cli, sizeof(from_cli))) == 0)
+			return;         /* connection closed by other end */
+
+		printf("arg len = %d, arg buf = %s", from_cli.len, from_cli.msg);
+	}
+}
+
+void str_cli(int sockfd, struct args *this_test) //str_cli09
+{
+	Writen(sockfd, this_test, sizeof(struct args));
+	return;
+}
+
+void * fDoRunSendMessageToPeer(void * vargp)
+{
+	time_t clk;
+	char ctime_buf[27];
+	int sockfd;
+	struct sockaddr_in servaddr;
+	struct args test2;
+	int check = 0;
+
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Starting Client for sending messages to source DTN...***\n", ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+
+cli_again:
+	Pthread_mutex_lock(&dtn_mutex);
+	
+	while(cdone == 0)
+		Pthread_cond_wait(&dtn_cond, &dtn_mutex);
+	memcpy(&test2,&test,sizeof(test2));
+	cdone = 0;
+	Pthread_mutex_unlock(&dtn_mutex);
+
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Sending message %d to source DTN...***\n", ctime_buf, phase2str(current_phase), sleep_count);
+	fflush(tunLogPtr);
+
+	sockfd = Socket(AF_INET, SOCK_STREAM, 0);
+
+	bzero(&servaddr, sizeof(servaddr));
+	servaddr.sin_family = AF_INET;
+	servaddr.sin_port = htons(gSource_Dtn_Port);
+	if (src_ip_addr.y)
+	{
+		sprintf(aSrc_Ip,"%u.%u.%u.%u", src_ip_addr.a[0], src_ip_addr.a[1], src_ip_addr.a[2], src_ip_addr.a[3]);
+		Inet_pton(AF_INET, aSrc_Ip, &servaddr.sin_addr);
+	}
+	else
+	{
+		fprintf(stdout, "Source (Peer) IP address is zero. Can't connect to it****\n");
+		goto cli_again;
+	}
+
+	if (Connect(sockfd, (SA *) &servaddr, sizeof(servaddr)))
+	{
+		goto cli_again;
+	}
+
+	str_cli(sockfd, &test2);         /* do it all */
+	check = shutdown(sockfd, SHUT_WR);
+//	close(sockfd); - use shutdown instead of close
+	if (!check)
+		read_sock(sockfd); //final read to wait on close from other end
+	else
+		printf("shutdown failed, check = %d\n",check);
+
+	sleep_count++;
+	goto cli_again;
+
+return ((char *)0);
+}
+
 int main(int argc, char **argv) 
 {
 	int vRetFromRunBpfThread, vRetFromRunBpfJoin;
@@ -1376,17 +1639,22 @@ int main(int argc, char **argv)
 	int vRetFromRunGetThresholdsThread, vRetFromRunGetThresholdsJoin;
 	int vRetFromRunHelperDtnThread, vRetFromRunHelperDtnJoin;
 	int vRetFromRunFindHighestRttThread, vRetFromRunFindHighestRttJoin;
+	int vRetFromRunGetMessageFromPeerThread, vRetFromRunGetMessageFromPeerJoin;
+	int vRetFromRunSendMessageToPeerThread, vRetFromRunSendMessageToPeerJoin;
 	pthread_t doRunBpfCollectionThread_id, doRunHttpServerThread_id, doRunGetThresholds_id, doRunHelperDtn_id;
-	pthread_t doRunFindHighestRttThread_id;
+	pthread_t doRunFindHighestRttThread_id, doRunGetMessageFromPeerThread_id, doRunSendMessageToPeerThread_id;;
 	sArgv_t sArgv;
 	time_t clk;
 	char ctime_buf[27];
+	 
 #ifdef RUN_KERNEL_MODULE
 	char *pDevName = "/dev/tuningMod";
 	int fd = 0; 
 	int vRetFromKernelThread, vRetFromKernelJoin;
 	pthread_t doRunTalkToKernelThread_id;
+
 #endif
+	ignore_sigchld(); //won't leave zombie processes
 
 	sArgv.argc = argc;
 	sArgv.argv = argv;
@@ -1437,6 +1705,8 @@ int main(int argc, char **argv)
 	}
 #endif
 	memset(sFlowCounters,0,sizeof(sFlowCounters));
+	memset(aSrc_Ip,0,sizeof(aSrc_Ip));
+	src_ip_addr.y = 0;
 
 	fflush(tunLogPtr);
 
@@ -1456,6 +1726,10 @@ int main(int argc, char **argv)
 	vRetFromRunHelperDtnThread = pthread_create(&doRunHelperDtn_id, NULL, fDoRunHelperDtn, &sArgv); 
 	//Start Rtt monitoring
 	vRetFromRunFindHighestRttThread = pthread_create(&doRunFindHighestRttThread_id, NULL, fDoRunFindHighestRtt, &sArgv); 
+	//Listen for messages from destination DTN
+	vRetFromRunGetMessageFromPeerThread = pthread_create(&doRunGetMessageFromPeerThread_id, NULL, fDoRunGetMessageFromPeer, &sArgv); 
+	//Send messages to source DTN
+	vRetFromRunSendMessageToPeerThread = pthread_create(&doRunSendMessageToPeerThread_id, NULL, fDoRunSendMessageToPeer, &sArgv); 
 
 #if defined(RUN_KERNEL_MODULE)
 	if (vRetFromKernelThread == 0)
@@ -1475,6 +1749,12 @@ int main(int argc, char **argv)
 
 	if (vRetFromRunFindHighestRttThread == 0)
     		vRetFromRunFindHighestRttJoin = pthread_join(doRunFindHighestRttThread_id, NULL);
+	
+	if (vRetFromRunGetMessageFromPeerThread == 0)
+    		vRetFromRunGetMessageFromPeerJoin = pthread_join(doRunGetMessageFromPeerThread_id, NULL);
+
+	if (vRetFromRunSendMessageToPeerThread == 0)
+    		vRetFromRunSendMessageToPeerJoin = pthread_join(doRunSendMessageToPeerThread_id, NULL);
 
 #if defined(RUN_KERNEL_MODULE)
 	if (fd > 0)
