@@ -9,15 +9,20 @@ Note: This package requires 'lshw' and 'dmidecode' utilities tools
 
 Additional Notes:
 There are 3 files that are used in conjunction with the Tuning Module: 
-i.   user_config.txt 
-ii.  gdv.sh 
-iii. gdv_100.sh
-iv. /tmp/tuningLog 
+i.    readme.txt
+ii.   user_config.txt 
+iii.  gdv.sh 
+iv.   gdv_100.sh
+v.    /tmp/tuningLog 
+
+readme.txt
+==========
+The file you are currently reading.
 
 user_config.txt 
 ===============
 In the user_config.txt, the operator can use certain well known values to 
-control how the Tuning Module operates.  So far, there are 8 parameters 
+control how the Tuning Module operates.  So far, there are 9 parameters 
 that can be used.  The following is an explanation for each one: 
 
 a. evaluation timer  
@@ -33,7 +38,7 @@ should apply tuning recommendations.
 
 c. API_listen_port 
 The API_listen_port parameter is used to allow a user to send CLI requests to 
-the Tuning Module. The default value (currently arbitrary) is 5523. 
+the Tuning Module. The default value is 5523. 
 
 d. apply_default_system_tuning 
 The apply_default_system_tuning parameter is used to tell the Tuning Module if 
@@ -56,6 +61,16 @@ recommendations to the DTN operator, but not apply them itself.
 g. maxnum_tuning_logs
 The maxnum_tuning_logs parameter is used to limit the amount of backups
 of tuningLogs that the Tuning Module should make. the default is 10.
+
+h. make_default_system_tuning_perm
+The make_default_system_tuning_perm is used to tell the Tuning Module if it
+should make the default system tunings that it applies permanent or not.
+That is, it will remain consistent after a reboot.
+
+i. source_dtn_port
+The source_dtn_port parameter is used to allow communication from the 
+destination DTN to the source DTN. This enables the peers to send information
+regarding performance issues to the source.  The default value is 5524.
 
 gdv_100.sh
 ==========
