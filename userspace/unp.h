@@ -70,9 +70,7 @@
 # include	<sys/sockio.h>
 #endif
 
-#ifdef	HAVE_PTHREAD_H
 # include	<pthread.h>
-#endif
 
 #ifdef HAVE_NET_IF_DL_H
 # include	<net/if_dl.h>
