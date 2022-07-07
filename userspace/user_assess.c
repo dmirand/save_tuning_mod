@@ -26,6 +26,7 @@ void fDo_lshw(void);
 
 int gInterval = 2000; //default
 int gAPI_listen_port = 5523; //default listening port
+int gSource_Dtn_Port = 5524; //default listening port
 int netDeviceSpeed = 0;
 int numaNode = 0;
 static int netDevice_rx_ring_buff_cfg_max_val = 0;
@@ -57,7 +58,7 @@ const char *phase2str(enum workflow_phases phase)
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	8
+#define NUMUSERVALUES	9
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -72,7 +73,8 @@ sUserValues_t userValues = {{"evaluation_timer", "2000", "-1"},
 			{"apply_bios_tuning","n","-1"},
 			{"apply_nic_tuning","n","-1"},
 			{"make_default_system_tuning_perm","n","-1"},
-			{"maxnum_tuning_logs","10","-1"}
+			{"maxnum_tuning_logs","10","-1"},
+			{"source_dtn_port","5524","-1"}
 			};
 
 void fCheck_log_limit(void)
@@ -257,6 +259,15 @@ void fDoGetUserCfgValues(void)
 										else
 											gMaxnum_tuning_logs = atoi(userValues[count].cfg_value);
 									}
+									else
+										if (strcmp(userValues[count].aUserValues,"source_dtn_port") == 0)
+										{
+											int cfg_val = atoi(userValues[count].cfg_value);
+											if (cfg_val == 0) //wasn't set properly - error
+												gSource_Dtn_Port = atoi(userValues[count].default_val);
+											else
+												gSource_Dtn_Port = cfg_val;
+										}
 	}
 
 	gettime(&clk, ctime_buf);

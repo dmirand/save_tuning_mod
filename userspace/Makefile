@@ -10,6 +10,7 @@ FACILIO_DIR = ../facil_io_7.0/
 COMMON_OBJS += $(COMMON_DIR)/common_libbpf.o
 
 OTHER_OBJS = ./user_assess.o
+OTHER_OBJS += ./wrapsomeunix.o
 
 FACILIO_OBJS += $(FACILIO_DIR)/lib/facil/fio.o
 FACILIO_OBJS += $(FACILIO_DIR)/lib/facil/fiobj/fiobj_hash.o
