@@ -37,12 +37,65 @@ union uIP {
 
 static union uIP src_ip_addr;
 
+void qOCC_Hop_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
+static void timerHandler( int sig, siginfo_t *si, void *uc );
+
 FILE * tunLogPtr = 0;
 void gettime(time_t *clk, char *ctime_buf)
 {
 	*clk = time(NULL);
 	ctime_r(clk,ctime_buf);
 	ctime_buf[24] = ':';
+}
+
+timer_t qOCC_Hop_TimerID;
+timer_t rTT_TimerID;
+
+struct itimerspec sStartTimer;
+struct itimerspec sDisableTimer;
+
+static void timerHandler( int sig, siginfo_t *si, void *uc )
+{
+	timer_t *tidp;
+	tidp = si->si_value.sival_ptr;
+
+	if ( *tidp == qOCC_Hop_TimerID )
+		qOCC_Hop_TimerID_Handler(sig, si, uc);
+	else
+		fprintf(stdout, "Timer handler incorrect***\n");
+
+	return;
+}
+
+static int makeTimer( char *name, timer_t *timerID, int expires_usecs)
+{
+	struct sigevent         te;
+	struct sigaction        sa;
+	int                     sigNo = SIGRTMIN;
+	long 			sec   = ((long)expires_usecs * 1000L) / 1000000000L;
+       	long 			nsec  = ((long)expires_usecs * 1000L) % 1000000000L; //going fron micro to nano
+
+	/* Set up signal handler. */
+	sa.sa_flags = SA_SIGINFO;
+	sa.sa_sigaction = timerHandler;
+	sigemptyset(&sa.sa_mask);
+	if (sigaction(sigNo, &sa, NULL) == -1)
+	{
+		fprintf(stderr, "Err***: Failed to setup signal handling for %s.\n", name);
+		return(-1);
+	}
+
+	/* Set and enable alarm */
+	te.sigev_notify = SIGEV_SIGNAL;
+	te.sigev_signo = sigNo;
+	te.sigev_value.sival_ptr = timerID;
+	timer_create(CLOCK_REALTIME, &te, timerID);
+
+	sStartTimer.it_value.tv_sec = sec;
+	sStartTimer.it_value.tv_nsec = nsec;
+	fprintf(stdout,"sec in timer = %ld, nsec = %ld, expires_usec = %d\n", sStartTimer.it_value.tv_sec, sStartTimer.it_value.tv_nsec, expires_usecs);
+
+	return(0);
 }
 
 /******HTTP server *****/
@@ -179,11 +232,9 @@ void print_hop_key(struct hop_key *key);
 void record_activity(void); 
 
 #define SIGALRM_MSG "SIGALRM received.\n"
-struct itimerval sStartTimer;
-struct itimerval sDisableTimer;
 int vTimerIsSet = 0;
 
-void sig_alrm_handler(int signum, siginfo_t *info, void *ptr)
+void qOCC_Hop_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 {
 	time_t clk;
 	char ctime_buf[27];
@@ -192,37 +243,32 @@ void sig_alrm_handler(int signum, siginfo_t *info, void *ptr)
 	//***Do something here ***//
 	vTimerIsSet = 0;
 	record_activity();
-//	write(STDERR_FILENO, SIGALRM_MSG, sizeof(SIGALRM_MSG));
-//	exit(0);
-}
-
-void catch_sigalrm()
-{
-	static struct sigaction _sigact;
-
-	memset(&_sigact, 0, sizeof(_sigact));
-	_sigact.sa_sigaction = sig_alrm_handler;
-	_sigact.sa_flags = SA_SIGINFO;
-
-	sigaction(SIGALRM, &_sigact, NULL);
-}
+	fflush(tunLogPtr);
 	
+	return;
+}
+
 void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 {
 	time_t clk;
 	char ctime_buf[27];
+	int timerRc = 0;
 	int perf_output_map;
 	int int_dscp_map;
 	struct perf_buffer *pb;
 	struct threshold_maps maps = {};
 
-	memset (&sStartTimer,0,sizeof(struct itimerval));
-	memset (&sDisableTimer,0,sizeof(struct itimerval));
+	memset (&sStartTimer,0,sizeof(struct itimerspec));
+	memset (&sDisableTimer,0,sizeof(struct itimerspec));
 
-	//sStartTimer.it_value.tv_sec = gInterval; //global evaluation timer
-	sStartTimer.it_value.tv_usec = gInterval; //global evaluation timer
-
-	catch_sigalrm(); //set up SIGALRM catcher
+	timerRc = makeTimer("qOCC_Hop_TimerID", &qOCC_Hop_TimerID, gInterval);
+	if (timerRc)
+	{
+		fprintf(tunLogPtr, "%s %s: Problem creating timer *qOCC_Hop_TimerID*.\n", ctime_buf, phase2str(current_phase));
+		return ((char *)1);
+	}
+	else
+		fprintf(tunLogPtr, "%s %s: timer created.\n", ctime_buf, phase2str(current_phase));
 
 open_maps: {
 	gettime(&clk, ctime_buf);
@@ -309,7 +355,7 @@ void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 
 	if (!vTimerIsSet)
 	{
-		vRetTimer = setitimer(ITIMER_REAL, &sStartTimer, (struct itimerval *)NULL);	
+		vRetTimer = timer_settime(qOCC_Hop_TimerID, 0, &sStartTimer, (struct itimerspec *)NULL);
 		if (!vRetTimer)
 		{
 			vTimerIsSet = 1;
@@ -320,6 +366,9 @@ void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 				printf("%s %s: ***Timer set to %d microseconds for Queue Occupancy and HopDelay over threshholds***\n",ctime_buf, phase2str(current_phase), gInterval); 
 			}
 		}
+		else
+			printf("%s %s: ***could not set Timer, vRetTimer = %d,  errno = to %d***\n",ctime_buf, phase2str(current_phase), vRetTimer, errno); 
+
 	}
 
 	return;
@@ -411,7 +460,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			{
 				if (vTimerIsSet)
 				{
-					setitimer(ITIMER_REAL, &sDisableTimer, (struct itimerval *)NULL);	
+					timer_settime(qOCC_Hop_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
 					vTimerIsSet = 0;
 				}
 
@@ -810,7 +859,6 @@ void * fDoRunTalkToKernel(void * vargp)
 
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting communication with kernel module...***\n", ctime_buf, phase2str(current_phase));
-	//catch_sigint();
 	while(1) 
 	{	
 		strcpy(aMessage,"This is a message...");
@@ -894,6 +942,7 @@ void check_req(http_s *h, char aResp[])
         		Pthread_cond_signal(&dtn_cond);
         		Pthread_mutex_unlock(&dtn_mutex);
 		}
+
 		fprintf(tunLogPtr,"%s %s: ***New debug level is %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel);
 		goto after_check;
 	}
@@ -1130,7 +1179,6 @@ void * fDoRunHttpServer(void * vargp)
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Http Server ...***\n", ctime_buf, phase2str(current_phase));
 	fflush(tunLogPtr);
-	//catch_sigint();
 	initialize_http_service();
 	/* start facil */
 	fio_start(.threads = 1, .workers = 0);

@@ -1,3 +1,5 @@
+#ifndef __user_dtn_h
+#define __user_dtn_h
 //extern enum workflow_phases;
 
 #define WORKFLOW_NAMES_MAX      4
@@ -32,3 +34,4 @@ extern void Pthread_mutex_lock(pthread_mutex_t *);
 extern void Pthread_mutex_unlock(pthread_mutex_t *);
 extern void Pthread_cond_signal(pthread_cond_t *cptr);
 extern void Pthread_cond_wait(pthread_cond_t *cptr, pthread_mutex_t *mptr);
+#endif /* __user_dtn_h */

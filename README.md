@@ -87,4 +87,4 @@ In order to compile and work with the Tuning Module, do the following:
 -	Run ```make``` in ```userspace/``` and start the Tuning Module eg. ```sudo ./user_dtn -d enp6s0```
 	* 	```/tmp/tuningLog``` will contain all the relevant output 
 -	Run ```make``` in ```cli/```. This will create a directory call ```tmp``` which contains the binary ```tuncli```.
-	Run the binary and follow the instructions on how to use it
+	Run the binary and follow the instructions onscreen on how to use it
