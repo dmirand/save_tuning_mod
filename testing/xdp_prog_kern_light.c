@@ -67,8 +67,9 @@ int  xdp_test_ringbuf_func(struct xdp_md *ctx)
   ev.egress_time = count * 88;
   bpf_perf_event_output(ctx, &int_ring_buffer, BPF_F_CURRENT_CPU, &ev, sizeof(ev));
 
-	count++;
-	return action;
+  count++;
+  
+  return action;
 }
 
 char _license[] SEC("license") = "GPL";

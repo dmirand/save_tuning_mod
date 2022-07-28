@@ -1,4 +1,4 @@
-#define USING_PERF_EVENT_ARRAY2
+#define USING_PERF_EVENT_ARRAY1
 
 #include <stdio.h>
 #include <errno.h>
@@ -177,8 +177,8 @@ typedef struct {
 } sArgv_t;
 
 #ifdef USING_PERF_EVENT_ARRAY2
-#include "../../c++-int-sink/int-sink/src/shared/int_defs.h"
-#include "../../c++-int-sink/int-sink/src/shared/filter_defs.h"
+#include "../../../c++-int-sink/int-sink/src/shared/int_defs.h"
+#include "../../../c++-int-sink/int-sink/src/shared/filter_defs.h"
 
 enum ARGS{
 	CMD_ARG,
@@ -886,6 +886,7 @@ void * fDoRunTalkToKernel(void * vargp)
 }
 #endif
 
+#ifdef USING_PERF_EVENT_ARRAY2
 /***** HTTP *************/
 void check_req(http_s *h, char aResp[])
 {
@@ -1184,7 +1185,7 @@ void * fDoRunHttpServer(void * vargp)
 	fio_start(.threads = 1, .workers = 0);
 	return ((char *)0);
 }
-
+#endif
 void * fDoRunGetThresholds(void * vargp)
 {
 	//int * fd = (int *) vargp;
@@ -1683,14 +1684,17 @@ return ((char *)0);
 int main(int argc, char **argv) 
 {
 	int vRetFromRunBpfThread, vRetFromRunBpfJoin;
+#if defined(USING_PERF_EVENT_ARRAY2)
 	int vRetFromRunHttpServerThread, vRetFromRunHttpServerJoin;
 	int vRetFromRunGetThresholdsThread, vRetFromRunGetThresholdsJoin;
 	int vRetFromRunHelperDtnThread, vRetFromRunHelperDtnJoin;
 	int vRetFromRunFindHighestRttThread, vRetFromRunFindHighestRttJoin;
 	int vRetFromRunGetMessageFromPeerThread, vRetFromRunGetMessageFromPeerJoin;
 	int vRetFromRunSendMessageToPeerThread, vRetFromRunSendMessageToPeerJoin;
-	pthread_t doRunBpfCollectionThread_id, doRunHttpServerThread_id, doRunGetThresholds_id, doRunHelperDtn_id;
+	pthread_t doRunHttpServerThread_id, doRunGetThresholds_id, doRunHelperDtn_id;
 	pthread_t doRunFindHighestRttThread_id, doRunGetMessageFromPeerThread_id, doRunSendMessageToPeerThread_id;;
+#endif
+	pthread_t doRunBpfCollectionThread_id;
 	sArgv_t sArgv;
 	time_t clk;
 	char ctime_buf[27];
@@ -1752,10 +1756,12 @@ int main(int argc, char **argv)
 		exit(-8);
 	}
 #endif
+
+#if defined(USING_PERF_EVENT_ARRAY2)
 	memset(sFlowCounters,0,sizeof(sFlowCounters));
 	memset(aSrc_Ip,0,sizeof(aSrc_Ip));
 	src_ip_addr.y = 0;
-
+#endif
 	fflush(tunLogPtr);
 
 #if defined(USING_PERF_EVENT_ARRAY1) //testing with a test bpf object
@@ -1766,6 +1772,7 @@ int main(int argc, char **argv)
 	vRetFromRunBpfThread = pthread_create(&doRunBpfCollectionThread_id, NULL, fDoRunBpfCollectionRingBuf, &sArgv);;
 #endif
 
+#if defined(USING_PERF_EVENT_ARRAY2)
 	//Start Http server Thread	
 	vRetFromRunHttpServerThread = pthread_create(&doRunHttpServerThread_id, NULL, fDoRunHttpServer, &sArgv);
 	//Start Threshhold monitoring	
@@ -1778,6 +1785,7 @@ int main(int argc, char **argv)
 	vRetFromRunGetMessageFromPeerThread = pthread_create(&doRunGetMessageFromPeerThread_id, NULL, fDoRunGetMessageFromPeer, &sArgv); 
 	//Send messages to source DTN
 	vRetFromRunSendMessageToPeerThread = pthread_create(&doRunSendMessageToPeerThread_id, NULL, fDoRunSendMessageToPeer, &sArgv); 
+#endif
 
 #if defined(RUN_KERNEL_MODULE)
 	if (vRetFromKernelThread == 0)
@@ -1785,7 +1793,8 @@ int main(int argc, char **argv)
 #endif
 	if (vRetFromRunBpfThread == 0)
     		vRetFromRunBpfJoin = pthread_join(doRunBpfCollectionThread_id, NULL);
-	
+
+#if defined(USING_PERF_EVENT_ARRAY2)
 	if (vRetFromRunHttpServerThread == 0)
     		vRetFromRunHttpServerJoin = pthread_join(doRunHttpServerThread_id, NULL);
 	
@@ -1803,6 +1812,7 @@ int main(int argc, char **argv)
 
 	if (vRetFromRunSendMessageToPeerThread == 0)
     		vRetFromRunSendMessageToPeerJoin = pthread_join(doRunSendMessageToPeerThread_id, NULL);
+#endif
 
 #if defined(RUN_KERNEL_MODULE)
 	if (fd > 0)

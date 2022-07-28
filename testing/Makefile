@@ -4,7 +4,8 @@
 XDP_TARGETS  := xdp_prog_kern
 XDP_TARGETS  += xdp_prog_kern_light
 USER_TARGETS := xdp_loader
-USER_TARGETS += xdp_loader_light
+USER_TARGETS := xdp_loader_light
+USER_TARGETS += use_perf
 
 LIBBPF_DIR = ../libbpf/src/
 COMMON_DIR = ../common/
