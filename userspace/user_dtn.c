@@ -1,4 +1,4 @@
-#define USING_PERF_EVENT_ARRAY1
+#define USING_PERF_EVENT_ARRAY2
 
 #include <stdio.h>
 #include <errno.h>
