@@ -2,7 +2,8 @@
 
 # Departing from the implicit _user.c scheme
 XDP_TARGETS  := xdp_prog_kern
-XDP_TARGETS  += xdp_prog_kern_light
+XDP_TARGETS  := xdp_prog_kern_light
+XDP_TARGETS  += tcp_ack_update_rtt.bpf
 USER_TARGETS := xdp_loader
 USER_TARGETS := xdp_loader_light
 USER_TARGETS += use_perf

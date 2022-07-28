@@ -1,25 +1,28 @@
 #include "/usr/include/linux/bpf.h"
 #include <bpf/bpf_helpers.h>
-#include <bpf/bpf_core_read.h>
-#include <bpf/bpf_tracing.h>
+//#include <bpf/bpf_core_read.h>
+//#include <bpf/bpf_tracing.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include "tcp_ack.h"
+
 const volatile int filter_ports_len = 0;
 const volatile uid_t filter_uid = -1;
 const volatile pid_t filter_pid = 0;
-const volatile bool do_count = 0;
-
+const volatile int do_count = 0;
 
 struct {
         __uint(type, BPF_MAP_TYPE_HASH);
         __uint(max_entries, MAX_ENTRIES);
-        __type(key, u32);
+        __type(key, __u32);
         __type(value, struct int_telemetry *);
         __uint(map_flags, BPF_F_NO_PREALLOC);
 } sockets SEC(".maps");
 
 struct {
         __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
-        __uint(key_size, sizeof(u32));
-        __uint(value_size, sizeof(u32));
+        __uint(key_size, sizeof(__u32));
+        __uint(value_size, sizeof(__u32));
 } events SEC(".maps");
 
 
@@ -96,3 +99,4 @@ int BPF_KRETPROBE(tcp_ack_update_rtt_ret, int ret)
         return exit_tcp_ack_update_rtt(ctx, ret, 4);
 }
 
+char _license[] SEC("license") = "GPL";
